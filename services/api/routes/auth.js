@@ -22,7 +22,7 @@ router.post('/register', validate(registerSchema), async (req, res) => {
 
     if (existingUser) {
       return res.status(400).json({
-        error: 'Un utilizator cu acest email există deja',
+        error: 'Email deja folosit',
         code: 'EMAIL_ALREADY_EXISTS',
       });
     }
@@ -85,7 +85,7 @@ router.post('/login', validate(loginSchema), async (req, res) => {
 
     if (!user) {
       return res.status(401).json({
-        error: 'Email sau parolă incorectă',
+        error: 'Parolă greșită sau cont inexistent',
         code: 'INVALID_CREDENTIALS',
       });
     }
@@ -95,7 +95,7 @@ router.post('/login', validate(loginSchema), async (req, res) => {
 
     if (!isPasswordValid) {
       return res.status(401).json({
-        error: 'Email sau parolă incorectă',
+        error: 'Parolă greșită sau cont inexistent',
         code: 'INVALID_CREDENTIALS',
       });
     }

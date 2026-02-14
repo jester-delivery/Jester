@@ -1,0 +1,11 @@
+{
+  "name": "jester",
+  "private": true,
+  "description": "Jester food delivery monorepo",
+  "scripts": {
+    "dev:db": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "dev:db:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "dev:api": "npm run dev --prefix services/api",
+    "dev:storefront": "npm run dev --prefix apps/storefront"
+  }
+}

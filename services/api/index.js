@@ -15,6 +15,7 @@ const productsRoutes = require("./routes/products");
 const categoriesRoutes = require("./routes/categories");
 const restaurantsRoutes = require("./routes/restaurants");
 const ordersRoutes = require("./routes/orders");
+const cartOrdersRoutes = require("./routes/cartOrders");
 
 // Route principal
 app.get("/", (req, res) => {
@@ -23,6 +24,10 @@ app.get("/", (req, res) => {
 
 // Auth routes
 app.use("/auth", authRoutes);
+
+// Me (profile + addresses) - auth required
+const meRoutes = require("./routes/me");
+app.use("/me", meRoutes);
 
 // Products routes
 app.use("/products", productsRoutes);
@@ -35,6 +40,13 @@ app.use("/restaurants", restaurantsRoutes);
 
 // Orders routes
 app.use("/orders", ordersRoutes);
+
+// Cart orders (checkout din coș Jester 24/24)
+app.use("/cart-orders", cartOrdersRoutes);
+
+// Admin (protejat: auth + ADMIN_EMAILS)
+const adminRoutes = require("./routes/admin");
+app.use("/admin", adminRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

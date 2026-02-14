@@ -1,174 +1,31 @@
 const express = require('express');
 const prisma = require('../utils/prisma');
 const authenticateToken = require('../middleware/authenticateToken');
-const { validate, createOrderSchema, updateOrderStatusSchema } = require('../utils/validation');
+const requireAdmin = require('../middleware/requireAdmin');
+const { validate, updateOrderStatusSchema } = require('../utils/validation');
+const { orderEvents, emitOrderStatus } = require('../utils/orderEvents');
 
 const router = express.Router();
 
-/**
- * POST /orders
- * Creează o comandă nouă
- * Protejat cu authenticateToken - necesită utilizator autentificat
- */
-router.post('/', authenticateToken, validate(createOrderSchema), async (req, res) => {
-  try {
-    const { items, deliveryAddress } = req.body;
-    const userId = req.userId;
-
-    // Verifică că produsele există și sunt disponibile
-    const productIds = items.map(item => item.productId);
-    const products = await prisma.product.findMany({
-      where: {
-        id: { in: productIds },
-        available: true,
-      },
-    });
-
-    // Verifică dacă toate produsele există și sunt disponibile
-    if (products.length !== productIds.length) {
-      const foundIds = products.map(p => p.id);
-      const missingIds = productIds.filter(id => !foundIds.includes(id));
-      
-      return res.status(400).json({
-        error: 'Unele produse nu există sau nu sunt disponibile',
-        code: 'PRODUCTS_NOT_AVAILABLE',
-        missingProductIds: missingIds,
-      });
-    }
-
-    // Calculează total-ul comenzii
-    let total = 0;
-    const orderItemsData = items.map(item => {
-      const product = products.find(p => p.id === item.productId);
-      const itemPrice = Number(product.price) * item.quantity;
-      total += itemPrice;
-
-      return {
-        productId: item.productId,
-        quantity: item.quantity,
-        price: product.price,
-      };
-    });
-
-    // Creează comanda și order items într-o tranzacție
-    const order = await prisma.$transaction(async (tx) => {
-      // Creează comanda
-      const newOrder = await tx.order.create({
-        data: {
-          userId,
-          status: 'PENDING',
-          total,
-          deliveryAddress,
-          orderItems: {
-            create: orderItemsData,
-          },
-        },
-        include: {
-          orderItems: {
-            include: {
-              product: {
-                include: {
-                  category: {
-                    select: {
-                      id: true,
-                      name: true,
-                      slug: true,
-                    },
-                  },
-                  restaurant: {
-                    select: {
-                      id: true,
-                      name: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      });
-
-      return newOrder;
-    });
-
-    res.status(201).json({
-      message: 'Comandă creată cu succes',
-      order,
-    });
-  } catch (error) {
-    console.error('Error creating order:', error);
-    res.status(500).json({
-      error: 'Eroare la crearea comenzii',
-      code: 'CREATE_ORDER_ERROR',
-    });
-  }
-});
+const STATUS_VALUES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'DELIVERING', 'ON_THE_WAY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED', 'CANCELED'];
 
 /**
- * GET /orders
- * Returnează comenzile utilizatorului autentificat
- * Protejat cu authenticateToken
+ * GET /orders/my
+ * Comenzile user-ului logat (ordonate desc după createdAt)
  */
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/my', authenticateToken, async (req, res) => {
   try {
     const userId = req.userId;
-    const { status, page = '1', limit = '20' } = req.query;
 
-    const pageNum = parseInt(page, 10);
-    const limitNum = Math.min(parseInt(limit, 10), 100);
-    const skip = (pageNum - 1) * limitNum;
-
-    const where = { userId };
-    if (status) {
-      where.status = status.toUpperCase();
-    }
-
-    const [orders, total] = await Promise.all([
-      prisma.order.findMany({
-        where,
-        include: {
-          orderItems: {
-            include: {
-              product: {
-                include: {
-                  category: {
-                    select: {
-                      id: true,
-                      name: true,
-                      slug: true,
-                    },
-                  },
-                  restaurant: {
-                    select: {
-                      id: true,
-                      name: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        skip,
-        take: limitNum,
-        orderBy: {
-          createdAt: 'desc',
-        },
-      }),
-      prisma.order.count({ where }),
-    ]);
-
-    const totalPages = Math.ceil(total / limitNum);
-
-    res.json({
-      orders,
-      total,
-      page: pageNum,
-      limit: limitNum,
-      totalPages,
+    const orders = await prisma.cartOrder.findMany({
+      where: { userId },
+      include: { items: true },
+      orderBy: { createdAt: 'desc' },
     });
+
+    res.json({ orders });
   } catch (error) {
-    console.error('Error fetching orders:', error);
+    console.error('Error fetching my orders:', error);
     res.status(500).json({
       error: 'Eroare la obținerea comenzilor',
       code: 'FETCH_ORDERS_ERROR',
@@ -177,60 +34,74 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 /**
+ * GET /orders/stream/:orderId
+ * SSE stream pentru update-uri status în timp real.
+ * Clientul primește event: status_changed când admin schimbă statusul.
+ */
+router.get('/stream/:orderId', authenticateToken, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.userId;
+
+    const order = await prisma.cartOrder.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+
+    if (!order || order.userId !== userId) {
+      return res.status(403).json({ error: 'Acces interzis', code: 'FORBIDDEN' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const handler = (payload) => {
+      if (payload.orderId === orderId) {
+        res.write(`event: status_changed\n`);
+        res.write(`data: ${JSON.stringify({ status: payload.status, order: payload.order })}\n\n`);
+        res.flush?.();
+      }
+    };
+
+    orderEvents.on('order:status', handler);
+
+    req.on('close', () => {
+      orderEvents.off('order:status', handler);
+    });
+  } catch (error) {
+    console.error('Error setting up SSE stream:', error);
+    res.status(500).json({ error: 'Eroare la deschiderea stream-ului', code: 'SSE_ERROR' });
+  }
+});
+
+/**
  * GET /orders/:id
- * Returnează detaliile unei comenzi specifice
- * Protejat cu authenticateToken - utilizatorul poate vedea doar comenzile sale
+ * Comanda + items, doar dacă order.userId === req.userId
  */
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.userId;
 
-    const order = await prisma.order.findFirst({
-      where: {
-        id,
-        userId, // Asigură-te că utilizatorul poate vedea doar comenzile sale
-      },
-      include: {
-        orderItems: {
-          include: {
-            product: {
-              include: {
-                category: {
-                  select: {
-                    id: true,
-                    name: true,
-                    slug: true,
-                  },
-                },
-                restaurant: {
-                  select: {
-                    id: true,
-                    name: true,
-                    description: true,
-                    address: true,
-                    phone: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-          },
-        },
-      },
+    const order = await prisma.cartOrder.findUnique({
+      where: { id },
+      include: { items: true },
     });
 
     if (!order) {
       return res.status(404).json({
-        error: 'Comandă negăsită sau nu ai permisiunea să o accesezi',
+        error: 'Comandă negăsită',
         code: 'ORDER_NOT_FOUND',
+      });
+    }
+
+    if (order.userId !== userId) {
+      return res.status(403).json({
+        error: 'Nu ai permisiunea să accesezi această comandă',
+        code: 'FORBIDDEN',
       });
     }
 
@@ -245,72 +116,82 @@ router.get('/:id', authenticateToken, async (req, res) => {
 });
 
 /**
- * PUT /orders/:id/status
- * Actualizează statusul unei comenzi
- * Protejat cu authenticateToken
- * Notă: În MVP, orice utilizator autentificat poate actualiza statusul
- *       În versiunea Beta, va fi restricționat doar pentru admin/curier
+ * PATCH /orders/:id/status
+ * Actualizează statusul comenzii (doar admin - ADMIN_EMAILS în .env)
  */
-router.put('/:id/status', authenticateToken, validate(updateOrderStatusSchema), async (req, res) => {
+const VALID_CANCEL_FROM = ['PENDING', 'CONFIRMED'];
+const VALID_NEXT: Record<string, string[]> = {
+  PENDING: ['CONFIRMED', 'CANCELLED', 'CANCELED'],
+  CONFIRMED: ['PREPARING', 'ON_THE_WAY', 'OUT_FOR_DELIVERY', 'CANCELLED', 'CANCELED'],
+  PREPARING: ['ON_THE_WAY', 'OUT_FOR_DELIVERY', 'DELIVERED'],
+  ON_THE_WAY: ['DELIVERED'],
+  OUT_FOR_DELIVERY: ['DELIVERED'],
+  DELIVERED: [],
+  CANCELLED: [],
+  CANCELED: [],
+};
+
+router.patch('/:id/status', authenticateToken, requireAdmin, validate(updateOrderStatusSchema), async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
-    const userId = req.userId;
+    const { status, estimatedDeliveryMinutes, internalNotes } = req.body;
 
-    // Verifică dacă comanda există și aparține utilizatorului
-    // (în Beta, va fi permis și pentru admin/curier)
-    const existingOrder = await prisma.order.findFirst({
-      where: {
-        id,
-        userId,
-      },
+    if (status != null && !STATUS_VALUES.includes(status)) {
+      return res.status(400).json({
+        error: 'Status invalid',
+        code: 'INVALID_STATUS',
+      });
+    }
+
+    const order = await prisma.cartOrder.findUnique({
+      where: { id },
+      include: { items: true },
     });
 
-    if (!existingOrder) {
+    if (!order) {
       return res.status(404).json({
-        error: 'Comandă negăsită sau nu ai permisiunea să o actualizezi',
+        error: 'Comandă negăsită',
         code: 'ORDER_NOT_FOUND',
       });
     }
 
-    // Actualizează statusul comenzii
-    const updatedOrder = await prisma.order.update({
+    const isCancel = status && (status === 'CANCELLED' || status === 'CANCELED');
+    if (isCancel && !VALID_CANCEL_FROM.includes(order.status)) {
+      return res.status(400).json({
+        error: 'Anularea este permisă doar din PENDING sau CONFIRMED',
+        code: 'INVALID_STATUS_TRANSITION',
+      });
+    }
+
+    const allowed = VALID_NEXT[order.status] || [];
+    if (status && !allowed.includes(status)) {
+      return res.status(400).json({
+        error: `Tranziție invalidă: ${order.status} → ${status}`,
+        code: 'INVALID_STATUS_TRANSITION',
+      });
+    }
+
+    const data = {};
+    if (status != null) data.status = status;
+    if (estimatedDeliveryMinutes !== undefined) data.estimatedDeliveryMinutes = estimatedDeliveryMinutes;
+    if (internalNotes !== undefined) data.internalNotes = internalNotes;
+
+    const updatedOrder = await prisma.cartOrder.update({
       where: { id },
-      data: { status },
-      include: {
-        orderItems: {
-          include: {
-            product: {
-              include: {
-                category: {
-                  select: {
-                    id: true,
-                    name: true,
-                    slug: true,
-                  },
-                },
-                restaurant: {
-                  select: {
-                    id: true,
-                    name: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      data,
+      include: { items: true },
     });
 
-    res.json({
-      message: 'Statusul comenzii a fost actualizat',
-      order: updatedOrder,
-    });
+    if (status != null) {
+      emitOrderStatus(updatedOrder);
+    }
+
+    res.json({ order: updatedOrder });
   } catch (error) {
     console.error('Error updating order status:', error);
     res.status(500).json({
-      error: 'Eroare la actualizarea statusului comenzii',
-      code: 'UPDATE_ORDER_STATUS_ERROR',
+      error: 'Eroare la actualizarea statusului',
+      code: 'UPDATE_ORDER_ERROR',
     });
   }
 });

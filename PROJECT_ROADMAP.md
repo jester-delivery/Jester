@@ -1,8 +1,33 @@
 # 🎯 Jester - Project Roadmap
 
-**Ultima actualizare:** 13 Februarie 2026  
+**Ultima actualizare:** 15 Februarie 2026  
 **Status proiect:** 🟡 În dezvoltare (MVP)  
-**Backend MVP:** ✅ Complet (3/3 task-uri P0 finalizate)
+**Backend MVP:** ✅ Complet
+
+---
+
+## 📌 Status curent – DONE / IN PROGRESS / NEXT
+
+### ✅ DONE
+- **Auth:** Login, Register, JWT, mesaje clare (Email deja folosit, Parolă greșită)
+- **Orders legat de user:** POST /cart-orders cu userId din JWT, checkout cere login
+- **My Orders:** GET /orders/my, GET /orders/:id cu guard owner
+- **Profile + Addresses:** GET/PATCH /me, CRUD /me/addresses, default address
+- **Checkout:** selector adrese din Address Book, prefill nume/telefon, validări RO phone
+- **Status flow:** PENDING → CONFIRMED → PREPARING → ON_THE_WAY → DELIVERED, CANCELED doar din PENDING/CONFIRMED
+- **Admin:** GET /admin/orders (protejat), PATCH /orders/:id/status cu ETA + internalNotes
+- **Real-time Order Status:** SSE GET /orders/stream/:orderId – update instant când admin schimbă status, toast „Comanda ta e în drum”
+- **Notificări client:** SSE pe order detail (înlocuie polling), polling 8s pe lista Orders, toast + vibrație, badge „Comandă live”
+- **Hardening:** validări Zod (adresă min 5, telefon RO, nume min 2), admin doar pentru ADMIN_EMAILS
+
+### 🔄 IN PROGRESS
+- N/A
+
+### 📋 NEXT (prioritate pentru mâine)
+1. **Customer Experience polish** – banner „Ai o comandă în curs”, highlight comandă activă
+2. **Search simplu** – search bar global, debounce 300ms, client-side
+3. **ETA logic** – countdown „Livrare în ~18 min”, recalcul automat
+4. **După:** Push notifications, VPS deploy, subdomain live
 
 ---
 
@@ -84,11 +109,19 @@ jester/
 - [x] Configurație Next.js cu suport pentru imagini externe (imgur.com)
 - [x] TypeScript configurat
 
+#### ✅ Pagini Implementate (februarie 2026)
+- [x] `/orders` - Comenzile mele (GET /orders/my), redirect login dacă neautentificat
+- [x] `/orders/[id]` - Detalii comandă + timeline + polling 5s + badge „Comandă live”
+- [x] `/profile` - Profil editabil (nume, telefon), link adrese salvate
+- [x] `/addresses` - CRUD adrese, set default
+- [x] `/login`, `/register` - cu redirect ?next= după auth
+- [x] `/jester-24-24` - Categorie Jester 24/24 cu coș
+- [x] `/jester-24-24/checkout` - Checkout cu selector adrese, validări
+- [x] `/jester-24-24/admin` - Admin comenzi (protejat ADMIN_EMAILS)
+
 #### ⚠️ Pagini Parțial Implementate
 - [ ] `/search` - Link există, pagină neimplementată
-- [ ] `/orders` - Link există, pagină neimplementată
-- [ ] `/profile` - Link există, pagină neimplementată
-- [ ] `/pizza`, `/supply`, `/grill`, `/bake`, `/delivery`, `/antiq`, `/jester-24-24` - Link-uri există, pagini neimplementate
+- [ ] `/pizza`, `/supply`, `/grill`, `/bake`, `/delivery`, `/antiq` - Link-uri există, pagini neimplementate
 
 ### Backend (API)
 
@@ -103,15 +136,19 @@ jester/
 - [x] `GET /` - Health check endpoint
 - [x] `GET /products` - Listă de produse mock (2 produse de test)
 
+#### ✅ Backend Implementat (februarie 2026)
+- [x] Baza de date PostgreSQL + Prisma
+- [x] Autentificare JWT (login, register, authenticateToken)
+- [x] GET/PATCH /me, CRUD /me/addresses
+- [x] POST /cart-orders (auth, validări Zod)
+- [x] GET /orders/my, GET /orders/:id (auth, guard owner)
+- [x] PATCH /orders/:id/status (auth + requireAdmin)
+- [x] GET /admin/orders (auth + requireAdmin)
+
 #### ⚠️ Funcționalități Lipsă
-- [ ] Baza de date (PostgreSQL/MongoDB)
-- [ ] Autentificare și autorizare (JWT/OAuth)
-- [ ] CRUD complet pentru produse
-- [ ] Managementul comenzilor
-- [ ] Managementul utilizatorilor
 - [ ] Integrare plăți
-- [ ] Notificări
-- [ ] Tracking comenzilor
+- [ ] SSE/WebSocket pentru notificări real-time
+- [ ] Push notifications
 
 ### Infrastructură
 
@@ -1108,6 +1145,18 @@ Pentru a finaliza MVP-ul, următoarele **3 task-uri P0** sunt cele mai critice �
   - Validare input cu Zod pentru toate endpoint-urile
   - Error handling complet implementat
   - Toate endpoint-urile testate și funcționale ✅
+- ✅ **MVP Orders end-to-end (storefront → API → DB):** 13 Feb 2026
+  - **PostgreSQL:** docker-compose în `infra/docker/docker-compose.yml` (postgres:16-alpine, port 5432, DB `jester`). `DATABASE_URL` în `services/api/.env` (nu hardcodat în cod).
+  - **Prisma:** Schema extinsă cu modele MVP: `CartOrder` (id, status, total, createdAt) și `CartOrderItem` (id, orderId, name, price, quantity). Migrare: `prisma/migrations/20260213190000_add_cart_orders`.
+  - **API:** `POST /orders` body `{ items: [{ name, price, quantity }], total }` (Zod), creează CartOrder + CartOrderItems în tranzacție, returnează `{ orderId }`. `GET /orders` lista cu items, sortare desc după createdAt. `GET /orders/:id` o comandă cu items. Fără auth pentru MVP.
+  - **Storefront:** La „Plasează comanda” din coș (Jester 24/24): POST /orders, la success golește coșul și redirect la `/orders`. Pagina `/orders` citește GET /orders, afișează status, total, dată, items; link la `/orders/[id]` pentru detaliu.
+  - **Scripturi (root):** `npm run dev:db` (pornire PostgreSQL), `dev:api` (API), `dev:storefront` (Next.js). API: `npm run dev` în `services/api`.
+
+**Cum pornești totul (MVP orders):**
+1. Din root: `npm run dev:db` (sau `docker compose -f infra/docker/docker-compose.yml up -d`) – pornește PostgreSQL.
+2. În `services/api`: asigură-te că `.env` conține `DATABASE_URL=postgresql://postgres:jester123@localhost:5432/jester?schema=public`, apoi `npx prisma migrate deploy` (dacă migrarea nu a fost rulată), `npm run dev`.
+3. Din root: `npm run dev:storefront` (sau `npm run dev` în `apps/storefront`).
+4. Deschide storefront, adaugă produse în coș pe `/jester-24-24`, apasă „Plasează comanda” → redirect la `/orders` unde vezi comanda.
 
 ---
 

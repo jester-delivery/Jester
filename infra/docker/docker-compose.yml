@@ -1,0 +1,20 @@
+# PostgreSQL pentru development local
+# Pornire: din root proiect: docker-compose -f infra/docker/docker-compose.yml up -d
+# Oprire: docker-compose -f infra/docker/docker-compose.yml down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: jester-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: jester123
+      POSTGRES_DB: jester
+    ports:
+      - "5432:5432"
+    volumes:
+      - jester_pgdata:/var/lib/postgresql/data
+
+volumes:
+  jester_pgdata: {}
