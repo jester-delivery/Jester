@@ -7,6 +7,7 @@ import { useJester24CartStore } from "@/stores/jester24CartStore";
 import { useAuthStore } from "@/stores/authStore";
 import { api, type Address } from "@/lib/api";
 import AddressSelector from "@/components/checkout/AddressSelector";
+import Toast from "@/components/ui/Toast";
 
 function formatAddressForOrder(addr: Address) {
   const parts = [addr.street];
@@ -34,6 +35,7 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(false);
   const [showAddressInput, setShowAddressInput] = useState(false);
   const [showAddressSelector, setShowAddressSelector] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const submittedRef = useRef(false);
 
   useEffect(() => {
@@ -145,14 +147,11 @@ export default function CheckoutPage() {
       };
 
       const res = await api.cartOrders.create(payload);
-      const orderId = res.data?.orderId;
-
       clearCart();
-      if (orderId) {
-        router.push(`/orders/${orderId}?placed=1`);
-      } else {
+      setToastMessage("Comandă plasată cu succes");
+      setTimeout(() => {
         router.push("/orders?placed=1");
-      }
+      }, 600);
     } catch {
       submittedRef.current = false;
       setErrors({ submit: "Eroare la plasarea comenzii. Încearcă din nou." });
@@ -403,6 +402,7 @@ export default function CheckoutPage() {
           onClose={() => setShowAddressSelector(false)}
         />
       </div>
+      <Toast message={toastMessage} />
     </main>
   );
 }

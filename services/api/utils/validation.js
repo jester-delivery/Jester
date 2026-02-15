@@ -4,18 +4,18 @@ const { z } = require('zod');
  * Schema de validare pentru înregistrare utilizator
  */
 const registerSchema = z.object({
-  email: z.string().email('Email invalid'),
-  password: z.string().min(6, 'Parola trebuie să aibă minim 6 caractere'),
-  name: z.string().min(2, 'Numele trebuie să aibă minim 2 caractere'),
-  phone: z.string().optional(),
+  email: z.string().min(1).max(255).email('Email invalid').transform((v) => v.trim().toLowerCase()),
+  password: z.string().min(6, 'Parola trebuie să aibă minim 6 caractere').max(128),
+  name: z.string().min(2, 'Numele trebuie să aibă minim 2 caractere').max(200).transform((v) => v.trim()),
+  phone: z.string().max(20).optional().transform((v) => (v == null || v === '' ? undefined : String(v).trim())),
 });
 
 /**
  * Schema de validare pentru login utilizator
  */
 const loginSchema = z.object({
-  email: z.string().email('Email invalid'),
-  password: z.string().min(1, 'Parola este obligatorie'),
+  email: z.string().min(1).max(255).email('Email invalid').transform((v) => v.trim().toLowerCase()),
+  password: z.string().min(1, 'Parola este obligatorie').max(128),
 });
 
 /**
@@ -37,23 +37,29 @@ const createOrderSchema = z.object({
 const createMvpOrderSchema = z.object({
   items: z.array(
     z.object({
-      name: z.string().min(1, 'Numele produsului este obligatoriu'),
-      price: z.number().nonnegative('Prețul trebuie să fie >= 0'),
-      quantity: z.number().int().positive('Cantitatea trebuie să fie un număr pozitiv'),
+      name: z.string().min(1, 'Numele produsului este obligatoriu').max(200),
+      price: z.number().nonnegative('Prețul trebuie să fie >= 0').max(99999.99),
+      quantity: z.number().int().positive('Cantitatea trebuie să fie un număr pozitiv').max(99),
     })
-  ).min(1, 'Comanda trebuie să conțină cel puțin un produs'),
-  total: z.number().nonnegative('Totalul trebuie să fie >= 0'),
+  ).min(1, 'Comanda trebuie să conțină cel puțin un produs').max(100, 'Comanda poate avea maxim 100 produse'),
+  total: z.number().nonnegative('Totalul trebuie să fie >= 0').max(999999.99),
   deliveryAddress: z.string()
     .min(1, 'Adresa de livrare este obligatorie')
-    .refine((v) => v.trim().length >= 5, 'Adresa de livrare trebuie să aibă min. 5 caractere'),
+    .max(500, 'Adresa este prea lungă')
+    .refine((v) => v.trim().length >= 5, 'Adresa de livrare trebuie să aibă min. 5 caractere')
+    .transform((v) => v.trim()),
   phone: z.string()
     .min(1, 'Telefonul este obligatoriu')
+    .max(20)
     .refine((v) => v.trim().length >= 8, 'Telefonul trebuie să aibă min. 8 caractere')
-    .refine((v) => /^(\+40|0)?7\d{8}$/.test(v.replace(/\s/g, '')), 'Telefon invalid. Folosește format RO: 07xx xxx xxx'),
+    .refine((v) => /^(\+40|0)?7\d{8}$/.test(v.replace(/\s/g, '')), 'Telefon invalid. Folosește format RO: 07xx xxx xxx')
+    .transform((v) => v.trim()),
   name: z.string()
     .min(1, 'Numele clientului este obligatoriu')
-    .refine((v) => v.trim().length >= 2, 'Numele trebuie să aibă min. 2 caractere'),
-  notes: z.string().optional().default(''),
+    .max(200, 'Numele este prea lung')
+    .refine((v) => v.trim().length >= 2, 'Numele trebuie să aibă min. 2 caractere')
+    .transform((v) => v.trim()),
+  notes: z.string().max(1000, 'Note prea lungi').optional().default('').transform((v) => (v == null ? '' : String(v).trim().slice(0, 1000))),
   paymentMethod: z.enum(['CASH_ON_DELIVERY', 'CARD', 'cash']).optional().default('CASH_ON_DELIVERY'),
 });
 
@@ -111,7 +117,7 @@ const updateOrderStatusSchema = z.object({
 function validate(schema) {
   return (req, res, next) => {
     try {
-      schema.parse(req.body);
+      req.body = schema.parse(req.body);
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -136,9 +142,9 @@ module.exports = {
   loginSchema,
   createOrderSchema,
   createMvpOrderSchema,
+  updateOrderStatusSchema,
   updateMeSchema,
   createAddressSchema,
   updateAddressSchema,
-  updateOrderStatusSchema,
   validate,
 };

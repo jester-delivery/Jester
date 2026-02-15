@@ -44,7 +44,7 @@ function OrderCard({
       <Link href={`/orders/${order.id}`} className="block p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm font-medium text-white/90">
-            {formatDate(order.createdAt)}
+            #{typeof order.id === "string" ? order.id.slice(0, 8) : ""} · {formatDate(order.createdAt)}
           </span>
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${getOrderStatusClass(order.status)}`}
@@ -155,7 +155,7 @@ function OrdersPageContent() {
       fetchOrders();
     };
     run();
-    const interval = setInterval(run, 7000);
+    const interval = setInterval(run, 12000);
     return () => {
       cancelled = true;
       clearInterval(interval);

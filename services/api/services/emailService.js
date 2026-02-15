@@ -26,6 +26,13 @@ function getTransporter() {
   return transporter;
 }
 
+function isSmtpConfigured() {
+  const host = process.env.SMTP_HOST;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  return !!(host && user && pass);
+}
+
 function formatDateRO(date) {
   const d = typeof date === 'string' ? new Date(date) : date;
   return d.toLocaleDateString('ro-RO', {
@@ -143,13 +150,15 @@ function escapeHtml(s) {
 
 /**
  * Trimite email de confirmare comandă.
- * Nu aruncă dacă SMTP nu e configurat (doar nu trimite).
+ * Nu aruncă dacă SMTP nu e configurat (doar nu trimite). Loghează doar: sent / failed / skipped.
  * @param {{ to: string, name: string, order: object }} opts
  * @returns {Promise<void>}
  */
 async function sendOrderConfirmationEmail({ to, name, order }) {
+  const orderIdShort = (order?.id || '').slice(0, 8);
   const trans = getTransporter();
   if (!trans) {
+    console.log('[email] skipped (SMTP not configured)');
     return;
   }
 
@@ -158,7 +167,7 @@ async function sendOrderConfirmationEmail({ to, name, order }) {
     name,
     order: {
       ...order,
-      etaMinutes: ETA_MINUTES,
+      etaMinutes: order.estimatedDeliveryMinutes != null ? order.estimatedDeliveryMinutes : ETA_MINUTES,
       items: (order.items || []).map((i) => ({
         name: i.name,
         quantity: i.quantity,
@@ -167,16 +176,24 @@ async function sendOrderConfirmationEmail({ to, name, order }) {
     },
   });
 
-  await trans.sendMail({
-    from: `"Jester" <${from}>`,
-    to,
-    subject,
-    text,
-    html,
-  });
+  try {
+    await trans.sendMail({
+      from: `"Jester" <${from}>`,
+      to,
+      subject,
+      text,
+      html,
+    });
+    console.log('[email] sent orderId=' + orderIdShort + ' to=' + to);
+  } catch (err) {
+    console.log('[email] failed orderId=' + orderIdShort + ' err=' + (err?.message || String(err)));
+    throw err;
+  }
 }
 
 module.exports = {
   sendOrderConfirmationEmail,
   buildOrderConfirmationContent,
+  isSmtpConfigured,
+  ETA_MINUTES,
 };

@@ -181,6 +181,13 @@ function OrderDetailContent() {
         )}
         <h1 className="mt-4 text-2xl font-bold">Comandă #{order.id.slice(0, 8)}</h1>
         <p className="mt-1 text-white/70">{formatDate(order.createdAt)}</p>
+        {order.estimatedDeliveryMinutes != null ? (
+          <p className="mt-1 text-sm text-amber-300/90">
+            Livrare estimată: ~{order.estimatedDeliveryMinutes} min
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-white/60">Livrare estimată: ~30 min</p>
+        )}
         {LIVE_STATUSES.includes(order.status) && (
           <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-green-500/20 px-3 py-1 text-xs font-semibold text-green-300">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />

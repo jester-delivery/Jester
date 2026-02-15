@@ -140,7 +140,7 @@ export const api = {
     getOrders: () => apiClient.get<{ orders: Order[] }>('/admin/orders'),
   },
 
-  // Cart orders: Checkout
+  // Cart orders: Checkout + status (admin)
   cartOrders: {
     create: (data: {
       total: number;
@@ -152,6 +152,8 @@ export const api = {
       paymentMethod?: 'CASH_ON_DELIVERY' | 'CARD' | 'cash';
     }) => apiClient.post<{ success: boolean; orderId: string }>('/cart-orders', data),
     getAll: () => apiClient.get<{ orders: Order[] }>('/cart-orders'),
+    updateStatus: (id: string, data: { status?: string; estimatedDeliveryMinutes?: number; internalNotes?: string }) =>
+      apiClient.patch<{ order: Order }>(`/cart-orders/${id}/status`, data),
   },
 };
 

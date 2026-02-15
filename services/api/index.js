@@ -1,13 +1,44 @@
 const express = require("express");
 const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Rate limiting: general 200/min; auth 10/min; POST cart-orders 30/min
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  message: { error: 'Prea multe cereri. Încearcă din nou mai târziu.', code: 'RATE_LIMIT' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Prea multe încercări. Încearcă din nou în câteva minute.', code: 'RATE_LIMIT' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const cartOrderCreateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { error: 'Prea multe comenzi. Încearcă din nou în câteva minute.', code: 'RATE_LIMIT' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(apiLimiter);
+
+// Health (primul rând – fără dependențe grele)
+const { isSmtpConfigured } = require("./services/emailService");
+app.get("/health", (req, res) => {
+  res.json({ ok: true, smtpConfigured: isSmtpConfigured() });
+});
 
 // Routes
 const authRoutes = require("./routes/auth");
@@ -22,8 +53,8 @@ app.get("/", (req, res) => {
   res.json({ message: "Jester API este live 🚀" });
 });
 
-// Auth routes
-app.use("/auth", authRoutes);
+// Auth routes (rate limit strict: 10/min per IP)
+app.use("/auth", authLimiter, authRoutes);
 
 // Me (profile + addresses) - auth required
 const meRoutes = require("./routes/me");
@@ -41,7 +72,7 @@ app.use("/restaurants", restaurantsRoutes);
 // Orders routes
 app.use("/orders", ordersRoutes);
 
-// Cart orders (checkout din coș Jester 24/24)
+// Cart orders (checkout din coș Jester 24/24); POST limitat la 30/min în router
 app.use("/cart-orders", cartOrdersRoutes);
 
 // Admin (protejat: auth + ADMIN_EMAILS)
