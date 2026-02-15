@@ -54,7 +54,14 @@ export const useAuthStore = create<AuthState>()(
           });
         } catch (error: any) {
           const apiError = error.response?.data?.error;
-          const errorMessage = typeof apiError === 'string' ? apiError : 'Eroare la autentificare';
+          let errorMessage: string;
+          if (error.code === 'ERR_NETWORK' || !error.response) {
+            errorMessage = 'Nu ne putem conecta la server. Verifică conexiunea și că API-ul rulează.';
+          } else if (typeof apiError === 'string') {
+            errorMessage = apiError;
+          } else {
+            errorMessage = 'Eroare la autentificare. Încearcă din nou.';
+          }
           set({
             isLoading: false,
             error: errorMessage,
@@ -83,7 +90,14 @@ export const useAuthStore = create<AuthState>()(
           });
         } catch (error: any) {
           const apiError = error.response?.data?.error;
-          const errorMessage = typeof apiError === 'string' ? apiError : 'Eroare la înregistrare';
+          let errorMessage: string;
+          if (error.code === 'ERR_NETWORK' || !error.response) {
+            errorMessage = 'Nu ne putem conecta la server. Verifică conexiunea și că API-ul rulează.';
+          } else if (typeof apiError === 'string') {
+            errorMessage = apiError;
+          } else {
+            errorMessage = 'Eroare la înregistrare. Încearcă din nou.';
+          }
           set({
             isLoading: false,
             error: errorMessage,
