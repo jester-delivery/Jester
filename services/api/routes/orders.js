@@ -120,7 +120,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
  * Actualizează statusul comenzii (doar admin - ADMIN_EMAILS în .env)
  */
 const VALID_CANCEL_FROM = ['PENDING', 'CONFIRMED'];
-const VALID_NEXT: Record<string, string[]> = {
+const VALID_NEXT = {
   PENDING: ['CONFIRMED', 'CANCELLED', 'CANCELED'],
   CONFIRMED: ['PREPARING', 'ON_THE_WAY', 'OUT_FOR_DELIVERY', 'CANCELLED', 'CANCELED'],
   PREPARING: ['ON_THE_WAY', 'OUT_FOR_DELIVERY', 'DELIVERED'],
