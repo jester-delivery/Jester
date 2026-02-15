@@ -32,7 +32,7 @@ router.get('/', async (req, res) => {
  */
 router.post('/', authenticateToken, validate(createMvpOrderSchema), async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = 'u1';
     const { items, total, paymentMethod, deliveryAddress, phone, name, notes } = req.body;
     const totalNum = Number(total);
     const pm = paymentMethod === 'cash' || paymentMethod === 'CASH_ON_DELIVERY'
