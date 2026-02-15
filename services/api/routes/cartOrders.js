@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../utils/prisma');
 const authenticateToken = require('../middleware/authenticateToken');
 const { validate, createMvpOrderSchema } = require('../utils/validation');
+const { sendOrderConfirmationEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -30,10 +31,30 @@ router.get('/', async (req, res) => {
  * POST /cart-orders
  * Creează CartOrder + CartOrderItems. Necesită auth; userId din JWT.
  */
+// UUID v4 simplu (hex 8-4-4-4-12)
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 router.post('/', authenticateToken, validate(createMvpOrderSchema), async (req, res) => {
+  const userId = req.userId;
+  const { items, total, paymentMethod, deliveryAddress, phone, name, notes } = req.body;
+
   try {
-    const userId = 'u1';
-    const { items, total, paymentMethod, deliveryAddress, phone, name, notes } = req.body;
+    if (!userId) {
+      return res.status(401).json({ error: 'Autentificare necesară', code: 'USER_ID_MISSING' });
+    }
+    const isUuid = typeof userId === 'string' && UUID_REGEX.test(userId);
+    if (!isUuid) {
+      return res.status(400).json({ error: 'ID utilizator invalid', code: 'INVALID_USER_ID' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true },
+    });
+    if (!user) {
+      return res.status(404).json({ error: 'Utilizator negăsit', code: 'USER_NOT_FOUND' });
+    }
+
     const totalNum = Number(total);
     const pm = paymentMethod === 'cash' || paymentMethod === 'CASH_ON_DELIVERY'
       ? 'CASH_ON_DELIVERY'
@@ -62,9 +83,32 @@ router.post('/', authenticateToken, validate(createMvpOrderSchema), async (req, 
       return newOrder;
     });
 
+    try {
+      await sendOrderConfirmationEmail({
+        to: user.email,
+        name: user.name || name || 'Client',
+        order: {
+          id: order.id,
+          createdAt: order.createdAt,
+          deliveryAddress: order.deliveryAddress,
+          phone: order.phone,
+          paymentMethod: order.paymentMethod,
+          items: order.items,
+          total: order.total,
+        },
+      });
+    } catch (emailErr) {
+      console.error('[cart-orders] Order confirmation email failed:', emailErr.message);
+    }
+
     res.status(201).json({ success: true, orderId: order.id });
   } catch (error) {
-    console.error('Error creating cart order:', error);
+    console.error('[POST /cart-orders] Prisma/DB Error:', {
+      message: error.message,
+      code: error.code,
+      meta: error.meta,
+      stack: error.stack,
+    });
     const code = error.code || 'CREATE_ORDER_ERROR';
     const message = error.meta?.message || error.message || 'Eroare la crearea comenzii';
     res.status(500).json({

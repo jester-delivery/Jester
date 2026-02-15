@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import BottomNavigation from "@/components/ui/BottomNavigation";
 import Toast from "@/components/ui/Toast";
 import { api, type Order } from "@/lib/api";
+import { getOrderStatusClass, ORDER_STATUS_LABEL } from "@/lib/orderStatus";
 import { useAuthStore } from "@/stores/authStore";
 import { useOrderStream } from "@/lib/useOrderStream";
 import OrderStatusTimeline from "@/components/orders/OrderStatusTimeline";
@@ -19,18 +20,6 @@ const STATUS_TOAST: Record<string, string> = {
   DELIVERED: "Comanda ta a fost livrată.",
   CANCELED: "Comanda ta a fost anulată.",
   CANCELLED: "Comanda ta a fost anulată.",
-};
-const STATUS_LABEL: Record<string, string> = {
-  PENDING: "În așteptare",
-  CONFIRMED: "Acceptată",
-  PREPARING: "Se pregătește",
-  READY: "Gata",
-  DELIVERING: "În livrare",
-  ON_THE_WAY: "În drum",
-  OUT_FOR_DELIVERY: "În drum",
-  DELIVERED: "Livrată",
-  CANCELLED: "Anulată",
-  CANCELED: "Anulată",
 };
 
 function formatDate(iso: string) {
@@ -71,7 +60,7 @@ function OrderDetailContent() {
       if (orderPayload && typeof orderPayload === "object" && "status" in orderPayload) {
         setOrder(orderPayload as Order);
       }
-      const msg = STATUS_TOAST[status] ?? `Comanda ta: ${STATUS_LABEL[status] ?? status}`;
+      const msg = STATUS_TOAST[status] ?? `Comanda ta: ${ORDER_STATUS_LABEL[status] ?? status}`;
       showToast(msg);
       if (typeof navigator !== "undefined" && navigator.vibrate) {
         navigator.vibrate([100, 50, 100]);
@@ -83,12 +72,23 @@ function OrderDetailContent() {
   useOrderStream(id ?? undefined, token, !!order && LIVE_STATUSES.includes(order.status), handleStatusChange);
 
   const fetchOrder = useCallback(async () => {
-    if (!id) return null;
+    if (!id || typeof id !== "string" || id.trim() === "") {
+      setError("Comanda nu a fost găsită.");
+      setLoading(false);
+      return;
+    }
     try {
       const res = await api.orders.getById(id);
-      return res.data.order;
-    } catch {
-      return null;
+      setOrder(res.data.order);
+    } catch (err: any) {
+      const status = err.response?.status;
+      if (status === 403) {
+        setError("Această comandă nu îți aparține.");
+      } else {
+        setError("Comanda nu a fost găsită.");
+      }
+    } finally {
+      setLoading(false);
     }
   }, [id]);
 
@@ -99,18 +99,15 @@ function OrderDetailContent() {
   }, [isAuthenticated, user, router, id]);
 
   useEffect(() => {
-    if (!id || !isAuthenticated || !user) return;
-    let cancelled = false;
-    fetchOrder().then((o) => {
-      if (!cancelled && o) {
-        setOrder(o);
-        setLoading(false);
-      } else if (!cancelled && !o) {
-        setError("Comanda nu a fost găsită.");
-        setLoading(false);
-      }
-    });
-    return () => { cancelled = true; };
+    if (!isAuthenticated || !user) return;
+    if (!id || typeof id !== "string" || id.trim() === "") {
+      setError("Comanda nu a fost găsită.");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    fetchOrder();
   }, [id, isAuthenticated, user, fetchOrder]);
 
   /* SSE înlocuiește polling - useOrderStream se ocupă de update-uri real-time */
@@ -127,8 +124,16 @@ function OrderDetailContent() {
   if (loading) {
     return (
       <main className="min-h-screen bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24 text-white">
-        <div className="mx-auto max-w-4xl px-4 py-8">
-          <p className="text-white/70">Se încarcă...</p>
+        <div className="mx-auto max-w-4xl px-4 py-8 animate-pulse">
+          <div className="h-4 w-32 rounded bg-white/20" />
+          <div className="mt-4 h-8 w-48 rounded bg-white/20" />
+          <div className="mt-2 h-4 w-56 rounded bg-white/10" />
+          <div className="mt-4 h-6 w-24 rounded-full bg-white/20" />
+          <div className="mt-6 space-y-3">
+            <div className="h-12 rounded-xl bg-white/10" />
+            <div className="h-12 rounded-xl bg-white/10" />
+            <div className="h-12 rounded-xl bg-white/10" />
+          </div>
         </div>
         <BottomNavigation />
       </main>
@@ -139,9 +144,15 @@ function OrderDetailContent() {
     return (
       <main className="min-h-screen bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24 text-white">
         <div className="mx-auto max-w-4xl px-4 py-8">
-          <p className="text-red-300">{error ?? "Comandă negăsită."}</p>
-          <Link href="/orders" className="mt-4 inline-block text-white/80 underline">
-            Înapoi la comenzi
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/20 px-5 py-4">
+            <p className="font-medium text-red-200">{error ?? "Comanda nu a fost găsită."}</p>
+            <p className="mt-1 text-sm text-red-200/80">Poți verifica comenzile tale în lista de comenzi.</p>
+          </div>
+          <Link
+            href="/orders"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white/10 border border-white/20 px-4 py-2.5 font-medium text-white hover:bg-white/15 transition"
+          >
+            ← Înapoi la comenzi
           </Link>
         </div>
         <BottomNavigation />
@@ -156,9 +167,17 @@ function OrderDetailContent() {
           ← Comenzile mele
         </Link>
         {justPlaced && (
-          <p className="mt-4 rounded-xl bg-green-500/20 px-4 py-3 text-green-300 font-medium">
-            Comanda ta a fost trimisă ✓
-          </p>
+          <div className="mt-4 rounded-2xl border border-green-500/30 bg-green-500/20 px-5 py-4 flex items-start gap-3">
+            <span className="shrink-0 mt-0.5 text-green-300" aria-hidden>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </span>
+            <div>
+              <p className="font-semibold text-green-300">Comandă plasată cu succes</p>
+              <p className="mt-1 text-sm text-green-200/90">Comanda ta a fost trimisă. Poți urmări statusul mai jos.</p>
+            </div>
+          </div>
         )}
         <h1 className="mt-4 text-2xl font-bold">Comandă #{order.id.slice(0, 8)}</h1>
         <p className="mt-1 text-white/70">{formatDate(order.createdAt)}</p>
@@ -169,15 +188,9 @@ function OrderDetailContent() {
           </span>
         )}
         <span
-          className={`mt-2 inline-block rounded-lg px-2 py-1 text-sm font-semibold ${
-            order.status === "DELIVERED"
-              ? "bg-green-500/20 text-green-300"
-              : order.status === "CANCELLED" || order.status === "CANCELED"
-                ? "bg-red-500/20 text-red-300"
-                : "bg-amber-500/20 text-amber-300"
-          }`}
+          className={`mt-2 inline-block rounded-full px-3 py-1 text-sm font-semibold ${getOrderStatusClass(order.status)}`}
         >
-          {STATUS_LABEL[order.status] ?? order.status}
+          {ORDER_STATUS_LABEL[order.status] ?? order.status}
         </span>
 
         <OrderStatusTimeline status={order.status} />

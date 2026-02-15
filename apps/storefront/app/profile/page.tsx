@@ -7,45 +7,24 @@ import { useAuthStore } from "@/stores/authStore";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import BottomNavigation from "@/components/ui/BottomNavigation";
 import { api } from "@/lib/api";
+import { getActiveOrdersCount } from "@/lib/orderStatus";
 
 function ProfilePageContent() {
   const router = useRouter();
   const { user, isLoading, fetchUser, logout } = useAuthStore();
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [activeOrdersCount, setActiveOrdersCount] = useState<number>(0);
 
   useEffect(() => {
-    if (!user) {
-      fetchUser();
-    }
+    if (!user) fetchUser();
   }, [user, fetchUser]);
 
   useEffect(() => {
-    if (user) {
-      setName(user.name || "");
-      setPhone(user.phone || "");
-    }
+    if (!user) return;
+    api.orders
+      .getMy()
+      .then((res) => setActiveOrdersCount(getActiveOrdersCount(res.data.orders ?? [])))
+      .catch(() => setActiveOrdersCount(0));
   }, [user]);
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    setSaveSuccess(false);
-    try {
-      const res = await api.me.updateProfile({ name: name.trim(), phone: phone.trim() || null });
-      useAuthStore.setState({ user: res.data.user });
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Eroare la salvare");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleLogout = () => {
     logout();
@@ -54,10 +33,17 @@ function ProfilePageContent() {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24">
-        <div className="container mx-auto px-4 py-12">
-          <div className="text-center">
-            <p className="text-white/70">Se încarcă...</p>
+      <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-28">
+        <div className="container mx-auto px-4 py-8 max-w-lg animate-pulse">
+          <div className="text-center mb-10">
+            <div className="w-20 h-20 rounded-full bg-white/15 mx-auto mb-4" />
+            <div className="h-5 w-32 rounded bg-white/20 mx-auto mb-2" />
+            <div className="h-4 w-48 rounded bg-white/10 mx-auto" />
+          </div>
+          <div className="space-y-4">
+            <div className="h-16 rounded-2xl bg-white/10" />
+            <div className="h-16 rounded-2xl bg-white/10" />
+            <div className="h-16 rounded-2xl bg-white/10" />
           </div>
         </div>
         <BottomNavigation />
@@ -74,92 +60,139 @@ function ProfilePageContent() {
     );
   }
 
+  const initial = (user.name || "?").charAt(0).toUpperCase();
+
   return (
-    <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24">
-      <div className="container mx-auto px-4 py-12 max-w-2xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Profilul Meu</h1>
-          <p className="text-white/70">Gestionează informațiile tale</p>
-        </div>
-
-        <form onSubmit={handleSave} className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 p-6 mb-6 space-y-4">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-2xl font-bold">
-              {(name || user?.name || "?").charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <h2 className="text-xl font-bold">{name || user?.name}</h2>
-              <p className="text-white/70 text-sm">{user?.email}</p>
-            </div>
+    <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-28">
+      <div className="container mx-auto px-4 py-8 max-w-lg">
+        {/* Header: avatar + nume + email (read-only) */}
+        <header className="text-center mb-10">
+          <div className="w-20 h-20 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-3xl font-bold text-white mx-auto mb-4">
+            {initial}
           </div>
+          <h1 className="text-xl font-semibold text-white mb-1">{user.name}</h1>
+          <p className="text-white/70 text-sm">{user.email}</p>
+        </header>
 
-          <div>
-            <label className="block text-sm text-white/70 mb-1">Email</label>
-            <input
-              type="email"
-              value={user?.email || ""}
-              readOnly
-              className="w-full rounded-xl bg-white/5 border border-white/20 px-4 py-3 text-white/70 cursor-not-allowed"
-            />
-            <p className="mt-1 text-xs text-white/50">Emailul nu poate fi schimbat</p>
-          </div>
-
-          <div>
-            <label className="block text-sm text-white/70 mb-1">Nume</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Numele tău"
-              className="w-full rounded-xl bg-white/5 border border-white/20 px-4 py-3 text-white placeholder:text-white/40 focus:border-amber-500/60 focus:outline-none"
-              required
-              minLength={2}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-white/70 mb-1">Telefon</label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="07xx xxx xxx"
-              className="w-full rounded-xl bg-white/5 border border-white/20 px-4 py-3 text-white placeholder:text-white/40 focus:border-amber-500/60 focus:outline-none"
-            />
-          </div>
-
-          {error && <p className="text-red-300 text-sm">{error}</p>}
-          {saveSuccess && <p className="text-green-300 text-sm">Salvat cu succes!</p>}
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full py-3 rounded-xl bg-amber-500 text-black font-semibold hover:bg-amber-400 transition disabled:opacity-50"
+        {/* Card: Orders – prima opțiune importantă */}
+        <section className="mb-4">
+          <Link
+            href="/orders"
+            className="flex items-center gap-4 w-full p-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/15 transition"
           >
-            {saving ? "Se salvează..." : "Salvează"}
-          </button>
-        </form>
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+              </svg>
+            </div>
+            <div className="flex-1 text-left">
+              <span className="font-medium text-white">Istoric comenzi</span>
+              <p className="text-white/60 text-sm">Vezi și urmărește comenzile tale</p>
+            </div>
+            <svg className="w-5 h-5 text-white/50 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+        </section>
 
-        <div className="space-y-3">
+        {/* Card: Account / Setări cont */}
+        <section className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 overflow-hidden mb-4">
+          <div className="px-4 py-3 border-b border-white/10">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-white/60">Cont</h2>
+          </div>
+          <Link
+            href="/profile/edit"
+            className="flex items-center gap-4 w-full p-4 hover:bg-white/5 transition border-b border-white/10"
+          >
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+            <div className="flex-1 text-left">
+              <span className="font-medium text-white">Edit profile</span>
+              <p className="text-white/60 text-sm">Nume, telefon</p>
+            </div>
+            <svg className="w-5 h-5 text-white/50 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
           <Link
             href="/addresses"
-            className="block w-full py-3 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 text-white font-semibold hover:bg-white/15 transition text-center"
+            className="flex items-center gap-4 w-full p-4 hover:bg-white/5 transition"
           >
-            Adrese salvate
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <div className="flex-1 text-left">
+              <span className="font-medium text-white">Adrese salvate</span>
+              <p className="text-white/60 text-sm">Livrare la adresa ta</p>
+            </div>
+            <svg className="w-5 h-5 text-white/50 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </Link>
-          <button
-            onClick={() => router.push("/orders")}
-            className="w-full py-3 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 text-white font-semibold hover:bg-white/15 transition"
+        </section>
+
+        {/* Card: Notifications (structură + badge placeholder) */}
+        <section className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 overflow-hidden mb-4">
+          <Link
+            href="/notifications"
+            className="flex items-center gap-4 w-full p-4 hover:bg-white/5 transition text-left"
           >
-            Vezi Comenzile Mele
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0 relative">
+              <svg className="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-amber-500/80 px-1 text-[10px] font-semibold text-black">
+                {activeOrdersCount > 99 ? "99+" : activeOrdersCount}
+              </span>
+            </div>
+            <div className="flex-1 text-left">
+              <span className="font-medium text-white">Notificări</span>
+              <p className="text-white/60 text-sm">Status comenzi, oferte</p>
+            </div>
+            <svg className="w-5 h-5 text-white/50 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+        </section>
+
+        {/* Card: Help (placeholder) */}
+        <section className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 overflow-hidden mb-4">
+          <button
+            type="button"
+            className="flex items-center gap-4 w-full p-4 hover:bg-white/5 transition text-left opacity-80"
+            disabled
+          >
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="flex-1 text-left">
+              <span className="font-medium text-white">Ajutor & Support</span>
+              <p className="text-white/60 text-sm">În curând</p>
+            </div>
           </button>
+        </section>
+
+        {/* Log out – danger, jos */}
+        <section className="mt-6">
           <button
+            type="button"
             onClick={handleLogout}
-            className="w-full py-3 rounded-xl bg-red-500/20 border border-red-500/30 text-red-200 font-semibold hover:bg-red-500/30 transition"
+            className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-300 font-semibold hover:bg-red-500/25 transition"
           >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
             Deconectează-te
           </button>
-        </div>
+        </section>
       </div>
 
       <BottomNavigation />

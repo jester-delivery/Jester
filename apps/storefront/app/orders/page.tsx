@@ -1,25 +1,13 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import BottomNavigation from "@/components/ui/BottomNavigation";
 import Toast from "@/components/ui/Toast";
 import { api, type Order } from "@/lib/api";
+import { getOrderStatusClass, ORDER_STATUS_LABEL } from "@/lib/orderStatus";
 import { useAuthStore } from "@/stores/authStore";
-
-const STATUS_LABEL: Record<string, string> = {
-  PENDING: "În așteptare",
-  CONFIRMED: "Acceptată",
-  PREPARING: "Se pregătește",
-  READY: "Gata",
-  DELIVERING: "În livrare",
-  ON_THE_WAY: "În drum",
-  OUT_FOR_DELIVERY: "În drum",
-  DELIVERED: "Livrată",
-  CANCELLED: "Anulată",
-  CANCELED: "Anulată",
-};
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -41,9 +29,73 @@ const STATUS_TOAST: Record<string, string> = {
   CANCELED: "Comanda ta a fost anulată.",
   CANCELLED: "Comanda ta a fost anulată.",
 };
+const STATUS_LABEL = ORDER_STATUS_LABEL;
 
-export default function OrdersPage() {
+function OrderCard({
+  order,
+  formatDate,
+}: {
+  order: Order;
+  formatDate: (iso: string) => string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <li className="rounded-2xl border border-white/20 bg-white/10 overflow-hidden transition hover:border-white/30">
+      <Link href={`/orders/${order.id}`} className="block p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-medium text-white/90">
+            {formatDate(order.createdAt)}
+          </span>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${getOrderStatusClass(order.status)}`}
+          >
+            {ORDER_STATUS_LABEL[order.status] ?? order.status}
+          </span>
+        </div>
+        <div className="mt-3 flex items-baseline justify-between gap-2">
+          <span className="text-xl font-bold text-white">
+            {Number(order.total).toFixed(2)} lei
+          </span>
+          <span className="text-sm text-white/60">
+            {order.items.length} produs(e)
+          </span>
+        </div>
+      </Link>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          setExpanded((x) => !x);
+        }}
+        className="w-full border-t border-white/10 px-4 py-2.5 text-sm font-medium text-amber-400 hover:bg-white/5 transition"
+      >
+        {expanded ? "Ascunde produse" : "Arată produse"}
+      </button>
+      {expanded && (
+        <div className="border-t border-white/10 bg-white/5 px-4 py-3">
+          <ul className="space-y-2">
+            {order.items.map((item) => (
+              <li
+                key={item.id}
+                className="flex justify-between text-sm text-white/90"
+              >
+                <span>{item.name}</span>
+                <span className="text-white/70">
+                  {item.quantity} × {Number(item.price).toFixed(2)} lei
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </li>
+  );
+}
+
+function OrdersPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const placedSuccess = searchParams.get("placed") === "1";
   const { isAuthenticated, user } = useAuthStore();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,6 +163,16 @@ export default function OrdersPage() {
     };
   }, [isAuthenticated, user, fetchOrders]);
 
+  // Re-fetch la focus/visibility: după ce revii de pe order detail (SSE acolo), list-ul se actualizează
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") fetchOrders();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [isAuthenticated, user, fetchOrders]);
+
   if (!isAuthenticated || !user) {
     return (
       <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24 flex items-center justify-center">
@@ -126,8 +188,33 @@ export default function OrdersPage() {
           Comenzile mele
         </h1>
 
+        {placedSuccess && (
+          <div className="mt-4 rounded-2xl border border-green-500/30 bg-green-500/20 px-5 py-4 flex items-start gap-3">
+            <span className="shrink-0 mt-0.5 text-green-300" aria-hidden>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </span>
+            <p className="font-medium text-green-300">Comanda a fost plasată cu succes.</p>
+          </div>
+        )}
+
         {loading && (
-          <p className="mt-6 text-white/70">Se încarcă...</p>
+          <div className="mt-6 space-y-4" aria-busy="true" aria-label="Se încarcă comenzile">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="rounded-2xl border border-white/20 bg-white/10 overflow-hidden p-4 animate-pulse"
+              >
+                <div className="flex justify-between gap-2">
+                  <div className="h-4 w-24 rounded bg-white/20" />
+                  <div className="h-5 w-20 rounded-full bg-white/20" />
+                </div>
+                <div className="mt-3 h-6 w-20 rounded bg-white/20" />
+                <div className="mt-2 h-4 w-28 rounded bg-white/10" />
+              </div>
+            ))}
+          </div>
         )}
 
         {error && (
@@ -141,37 +228,7 @@ export default function OrdersPage() {
         {!loading && !error && orders.length > 0 && (
           <ul className="mt-6 space-y-4">
             {orders.map((order) => (
-              <li key={order.id}>
-                <Link
-                  href={`/orders/${order.id}`}
-                  className="block rounded-2xl border border-white/20 bg-white/10 p-4 transition hover:border-white/30 hover:bg-white/15"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-sm text-white/70">
-                      {formatDate(order.createdAt)}
-                    </span>
-                    <span
-                      className={`rounded-lg px-2 py-1 text-xs font-semibold ${
-                        order.status === "DELIVERED"
-                          ? "bg-green-500/20 text-green-300"
-                          : order.status === "CANCELLED" || order.status === "CANCELED"
-                            ? "bg-red-500/20 text-red-300"
-                            : order.status === "ON_THE_WAY" || order.status === "OUT_FOR_DELIVERY"
-                              ? "bg-blue-500/20 text-blue-300"
-                              : "bg-amber-500/20 text-amber-300"
-                      }`}
-                    >
-                      {STATUS_LABEL[order.status] ?? order.status}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-lg font-bold text-white">
-                    Total: {Number(order.total).toFixed(2)} lei
-                  </p>
-                  <p className="mt-1 text-sm text-white/60">
-                    {order.items.length} produs(e)
-                  </p>
-                </Link>
-              </li>
+              <OrderCard key={order.id} order={order} formatDate={formatDate} />
             ))}
           </ul>
         )}
@@ -179,5 +236,19 @@ export default function OrdersPage() {
       <Toast message={toastMessage} />
       <BottomNavigation />
     </main>
+  );
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24 flex items-center justify-center">
+          <p className="text-white/70">Se încarcă...</p>
+        </main>
+      }
+    >
+      <OrdersPageContent />
+    </Suspense>
   );
 }

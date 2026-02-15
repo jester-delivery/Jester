@@ -13,6 +13,7 @@ function authenticateToken(req, res, next) {
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
   if (!token) {
+    console.log('[auth] 401', req.method, req.originalUrl || req.url, 'AUTH_TOKEN_MISSING');
     return res.status(401).json({ 
       error: 'Token de autentificare lipsă',
       code: 'AUTH_TOKEN_MISSING'
@@ -23,6 +24,7 @@ function authenticateToken(req, res, next) {
   const decoded = verifyToken(token);
   
   if (!decoded) {
+    console.log('[auth] 403', req.method, req.originalUrl || req.url, 'AUTH_TOKEN_INVALID');
     return res.status(403).json({ 
       error: 'Token de autentificare invalid sau expirat',
       code: 'AUTH_TOKEN_INVALID'

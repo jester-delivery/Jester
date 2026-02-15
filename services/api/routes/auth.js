@@ -4,6 +4,7 @@ const prisma = require('../utils/prisma');
 const { generateToken } = require('../utils/jwt');
 const { validate, registerSchema, loginSchema } = require('../utils/validation');
 const authenticateToken = require('../middleware/authenticateToken');
+const { sendWelcomeEmail } = require('../utils/mail');
 
 const router = express.Router();
 
@@ -47,6 +48,13 @@ router.post('/register', validate(registerSchema), async (req, res) => {
         // Nu returnăm passwordHash
       },
     });
+
+    // Email confirmare cont (nu blocăm înregistrarea dacă trimiterea eșuează)
+    try {
+      await sendWelcomeEmail(user.email, user.name);
+    } catch (mailErr) {
+      console.error('Error sending welcome email:', mailErr);
+    }
 
     // Generează JWT token
     const token = generateToken({ userId: user.id, email: user.email });
