@@ -6,6 +6,8 @@ const requireAdmin = require('../middleware/requireAdmin');
 const { validate, createMvpOrderSchema, updateOrderStatusSchema } = require('../utils/validation');
 const { sendOrderConfirmationEmail } = require('../services/emailService');
 const { emitOrderStatus } = require('../utils/orderEvents');
+const { isValidSulinaAddress } = require('../data/sulinaAddresses');
+const { PRODUCT_DELIVERY_FEE, PACKAGE_DELIVERY_FEE } = require('../config/delivery');
 
 const router = express.Router();
 
@@ -47,7 +49,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 router.post('/', cartOrderCreateLimiter, authenticateToken, validate(createMvpOrderSchema), async (req, res) => {
   const userId = req.userId;
-  const { items, total, paymentMethod, deliveryAddress, phone, name, notes } = req.body;
+  const { orderType, items, total, paymentMethod, deliveryAddress, phone, name, notes } = req.body;
 
   try {
     if (!userId) {
@@ -66,24 +68,50 @@ router.post('/', cartOrderCreateLimiter, authenticateToken, validate(createMvpOr
       return res.status(404).json({ error: 'Utilizator negăsit', code: 'USER_NOT_FOUND' });
     }
 
-    const totalNum = Number(total);
-    const pm = paymentMethod === 'cash' || paymentMethod === 'CASH_ON_DELIVERY'
-      ? 'CASH_ON_DELIVERY'
-      : (paymentMethod === 'CARD' ? 'CARD' : 'CASH_ON_DELIVERY');
+    const type = orderType === 'package_delivery' ? 'package_delivery' : 'product_order';
     const itemsData = items.map((item) => ({
       name: String(item.name ?? '').trim().slice(0, 200),
       price: Number(item.price),
       quantity: Math.max(1, Math.min(99, Math.floor(Number(item.quantity) || 1))),
     }));
 
+    const subtotal = itemsData.reduce((sum, it) => sum + it.price * it.quantity, 0);
+    let expectedTotal;
+    if (type === 'product_order') {
+      expectedTotal = subtotal + PRODUCT_DELIVERY_FEE;
+    } else {
+      expectedTotal = PACKAGE_DELIVERY_FEE;
+    }
+    const totalNum = Number(total);
+    if (Math.abs(totalNum - expectedTotal) > 0.01) {
+      return res.status(400).json({
+        error: type === 'product_order'
+          ? `Total invalid. Așteptat: subtotal (${subtotal.toFixed(2)}) + livrare (${PRODUCT_DELIVERY_FEE} lei).`
+          : `Total invalid. Tarif transport pachet: ${PACKAGE_DELIVERY_FEE} lei.`,
+        code: 'INVALID_TOTAL',
+      });
+    }
+
+    const deliveryAddr = deliveryAddress ? String(deliveryAddress).trim() : '';
+    if (!isValidSulinaAddress(deliveryAddr)) {
+      return res.status(400).json({
+        error: 'Momentan livrăm doar în Sulina. Alege o adresă din listă.',
+        code: 'DELIVERY_ADDRESS_NOT_IN_SULINA',
+      });
+    }
+    const pm = paymentMethod === 'cash' || paymentMethod === 'CASH_ON_DELIVERY'
+      ? 'CASH_ON_DELIVERY'
+      : (paymentMethod === 'CARD' ? 'CARD' : 'CASH_ON_DELIVERY');
+
     const order = await prisma.$transaction(async (tx) => {
       const newOrder = await tx.cartOrder.create({
         data: {
           userId: userId || null,
+          orderType: type,
           status: 'PENDING',
           total: totalNum,
           paymentMethod: pm,
-          deliveryAddress: deliveryAddress ? String(deliveryAddress).trim() : null,
+          deliveryAddress: deliveryAddr || null,
           phone: phone ? String(phone).trim() : null,
           name: name ? String(name).trim() : null,
           notes: notes ? String(notes).trim().slice(0, 1000) : null,

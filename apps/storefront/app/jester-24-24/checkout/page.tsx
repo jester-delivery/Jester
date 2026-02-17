@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useJester24CartStore } from "@/stores/jester24CartStore";
 import { useAuthStore } from "@/stores/authStore";
+import { useDeliveryAddressStore } from "@/stores/deliveryAddressStore";
 import { api, type Address } from "@/lib/api";
+import { PRODUCT_DELIVERY_FEE, VAT_RATE } from "@/lib/config/delivery";
 import AddressSelector from "@/components/checkout/AddressSelector";
 import Toast from "@/components/ui/Toast";
 
@@ -23,6 +25,8 @@ export default function CheckoutPage() {
   const items = useJester24CartStore((s) => s.items);
   const getTotalPrice = useJester24CartStore((s) => s.getTotalPrice);
   const clearCart = useJester24CartStore((s) => s.clear);
+  const deliveryStoreAddress = useDeliveryAddressStore((s) => s.address);
+  const setDeliveryStoreAddress = useDeliveryAddressStore((s) => s.setAddress);
 
   const [mounted, setMounted] = useState(false);
   const [address, setAddress] = useState("");
@@ -51,11 +55,22 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (!mounted || !isAuthenticated || !user) return;
+    const fromStore = (deliveryStoreAddress || "").trim();
+    if (fromStore.length >= 5) {
+      setAddress(fromStore);
+      setShowAddressInput(false);
+    }
     api.me
       .getAddresses()
       .then((res) => {
         const addrs = res.data.addresses ?? [];
         const defaultAddr = addrs.find((a) => a.isDefault) ?? addrs[0];
+        const fromStoreNow = (deliveryStoreAddress || "").trim();
+        if (fromStoreNow.length >= 5) {
+          setAddress(fromStoreNow);
+          setShowAddressInput(false);
+          return;
+        }
         if (defaultAddr) {
           setSelectedAddress(defaultAddr);
           setAddress(formatAddressForOrder(defaultAddr));
@@ -68,8 +83,10 @@ export default function CheckoutPage() {
           setShowAddressInput(true);
         }
       })
-      .catch(() => setShowAddressInput(true));
-  }, [mounted, isAuthenticated, user]);
+      .catch(() => {
+        if ((deliveryStoreAddress || "").trim().length < 5) setShowAddressInput(true);
+      });
+  }, [mounted, isAuthenticated, user, deliveryStoreAddress]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -78,9 +95,10 @@ export default function CheckoutPage() {
     }
   }, [mounted, isAuthenticated, user, router]);
 
-  // Nu mai redirectăm automat la coș gol – afișăm mesaj clar + link „Înapoi”
-
-  const total = mounted ? getTotalPrice() : 0;
+  // Subtotal = doar produse; livrare 7 lei; total = subtotal + livrare
+  const subtotal = mounted ? getTotalPrice() : 0;
+  const deliveryFee = PRODUCT_DELIVERY_FEE;
+  const total = subtotal + deliveryFee;
 
   const isValidROPhone = (ph: string) => {
     const digits = ph.replace(/\D/g, "");
@@ -101,7 +119,7 @@ export default function CheckoutPage() {
       e.cart = "Total invalid. Verifică coșul și încearcă din nou.";
     }
     if (!addr || addr.length < 5) {
-      e.address = "Adresa de livrare este obligatorie. Selectează o adresă sau introdu una manual (min. 5 caractere).";
+      e.address = "Adresa de livrare este obligatorie. Alege o adresă din listă (Sulina).";
     }
     if (!ph || ph.length < 8) {
       e.phone = "Telefonul este obligatoriu (min. 8 caractere).";
@@ -132,8 +150,11 @@ export default function CheckoutPage() {
     submittedRef.current = true;
     setLoading(true);
     try {
+      const subtotalNum = Number(getTotalPrice());
+      const totalNum = subtotalNum + PRODUCT_DELIVERY_FEE;
       const payload = {
-        total: Number(getTotalPrice()),
+        orderType: "product_order" as const,
+        total: totalNum,
         items: items.map((i) => ({
           name: String(i.name),
           price: Number(i.price),
@@ -146,7 +167,7 @@ export default function CheckoutPage() {
         paymentMethod: (paymentMethod === "cash" ? "CASH_ON_DELIVERY" : "CARD") as "CASH_ON_DELIVERY" | "CARD",
       };
 
-      const res = await api.cartOrders.create(payload);
+      await api.cartOrders.create(payload);
       clearCart();
       setToastMessage("Comandă plasată cu succes");
       setTimeout(() => {
@@ -373,12 +394,28 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* Rezumat + Submit */}
+          {/* Rezumat: subtotal, livrare, TVA inclus, total + text legal */}
           <div className="rounded-2xl border border-white/20 bg-white/5 p-4">
-            <div className="mb-4 flex justify-between text-lg font-bold">
-              <span>Total</span>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between text-white/80">
+                <span>Subtotal produse</span>
+                <span>{subtotal.toFixed(2)} lei</span>
+              </div>
+              <div className="flex justify-between text-white/80">
+                <span>Livrare</span>
+                <span>{deliveryFee} lei</span>
+              </div>
+              <p className="text-xs text-white/50 pt-1">
+                TVA inclus ({(VAT_RATE * 100).toFixed(0)}% calculat din total produse).
+              </p>
+            </div>
+            <div className="mt-4 mb-4 flex justify-between text-lg font-bold border-t border-white/10 pt-4">
+              <span>Total final</span>
               <span>{total.toFixed(2)} lei</span>
             </div>
+            <p className="text-xs text-white/50 mb-4">
+              Prețurile afișate includ TVA.
+            </p>
             <button
               type="submit"
               disabled={loading}

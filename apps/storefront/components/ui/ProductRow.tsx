@@ -8,11 +8,15 @@ type ProductRowProps = {
   name: string;
   price: number;
   image: string;
+  /** Optional short description (e.g. for pizza page) */
+  description?: string;
   restricted18?: boolean;
-  /** When provided, row is clickable and shows Add / stepper for Jester24 cart */
+  /** When provided, row is clickable and shows Add / stepper for global cart */
   id?: string;
   section?: string;
   showToast?: (msg: string) => void;
+  /** Callback when adding to cart: (fromRect, imageUrl) for fly-to-cart animation */
+  onAddWithFly?: (fromRect: DOMRect, imageUrl: string) => void;
 };
 
 /**
@@ -24,10 +28,12 @@ export default function ProductRow({
   name,
   price,
   image,
+  description,
   restricted18,
   id,
   section,
   showToast,
+  onAddWithFly,
 }: ProductRowProps) {
   const addItem = useJester24CartStore((s) => s.addItem);
   const inc = useJester24CartStore((s) => s.inc);
@@ -50,6 +56,9 @@ export default function ProductRow({
     if (!id || !section) return;
     addItem({ id, name, price, image, section });
     showToast?.("Produs adăugat în coș");
+    const target = (e.target as HTMLElement).closest("button") ?? (e.currentTarget as HTMLElement);
+    const rect = target.getBoundingClientRect();
+    onAddWithFly?.(rect, image);
   };
 
   const handleInc = (e: React.MouseEvent) => {
@@ -68,11 +77,16 @@ export default function ProductRow({
     showToast?.("Cantitate actualizată");
   };
 
-  const handleRowClick = () => {
+  const handleRowClick = (e?: React.MouseEvent) => {
     if (!id || !section) return;
     if (!isInCart) {
       addItem({ id, name, price, image, section });
       showToast?.("Produs adăugat în coș");
+      if (e) {
+        const target = (e.target as HTMLElement).closest("[role=button]") ?? (e.currentTarget as HTMLElement);
+        const rect = target.getBoundingClientRect();
+        onAddWithFly?.(rect, image);
+      }
     }
   };
 
@@ -82,7 +96,7 @@ export default function ProductRow({
     <div
       role={isCartEnabled ? "button" : undefined}
       tabIndex={isCartEnabled ? 0 : undefined}
-      onClick={isCartEnabled ? handleRowClick : undefined}
+      onClick={isCartEnabled ? (e) => handleRowClick(e) : undefined}
       onKeyDown={
         isCartEnabled
           ? (e) => {
@@ -114,10 +128,13 @@ export default function ProductRow({
       </div>
 
       {/* Info dreapta */}
-      <div className="flex flex-1 flex-col justify-center gap-1 px-4 py-3">
+      <div className="flex flex-1 flex-col justify-center gap-1 px-4 py-3 min-w-0">
         <h3 className="text-base font-semibold text-white line-clamp-2 sm:text-lg">
           {name}
         </h3>
+        {description && (
+          <p className="text-xs text-white/70 line-clamp-2 sm:text-sm">{description}</p>
+        )}
         <p className="text-lg font-bold text-white">
           {price.toFixed(2)}{" "}
           <span className="text-sm font-normal text-white/70">lei</span>

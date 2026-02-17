@@ -6,7 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import BottomNavigation from "@/components/ui/BottomNavigation";
 import Toast from "@/components/ui/Toast";
 import { api, type Order } from "@/lib/api";
-import { getOrderStatusClass, ORDER_STATUS_LABEL } from "@/lib/orderStatus";
+import { getOrderStatusClass, ORDER_STATUS_LABEL, PACKAGE_ORDER_STATUS_LABEL } from "@/lib/orderStatus";
 import { useAuthStore } from "@/stores/authStore";
 import { useOrderStream } from "@/lib/useOrderStream";
 import OrderStatusTimeline from "@/components/orders/OrderStatusTimeline";
@@ -181,12 +181,19 @@ function OrderDetailContent() {
         )}
         <h1 className="mt-4 text-2xl font-bold">Comandă #{order.id.slice(0, 8)}</h1>
         <p className="mt-1 text-white/70">{formatDate(order.createdAt)}</p>
-        {order.estimatedDeliveryMinutes != null ? (
-          <p className="mt-1 text-sm text-amber-300/90">
-            Livrare estimată: ~{order.estimatedDeliveryMinutes} min
-          </p>
+        {/* package_delivery = Jester Delivery (pachete); product_order sau lipsă = food, flow neschimbat */}
+        {order.orderType === "package_delivery" ? (
+          <p className="mt-1 text-sm text-white/60">Jester Delivery – livrare pachet</p>
         ) : (
-          <p className="mt-1 text-sm text-white/60">Livrare estimată: ~30 min</p>
+          <>
+            {order.estimatedDeliveryMinutes != null ? (
+              <p className="mt-1 text-sm text-amber-300/90">
+                Livrare estimată: ~{order.estimatedDeliveryMinutes} min
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-white/60">Livrare estimată: ~30 min</p>
+            )}
+          </>
         )}
         {LIVE_STATUSES.includes(order.status) && (
           <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-green-500/20 px-3 py-1 text-xs font-semibold text-green-300">
@@ -197,10 +204,17 @@ function OrderDetailContent() {
         <span
           className={`mt-2 inline-block rounded-full px-3 py-1 text-sm font-semibold ${getOrderStatusClass(order.status)}`}
         >
-          {ORDER_STATUS_LABEL[order.status] ?? order.status}
+          {(order.orderType === "package_delivery" ? PACKAGE_ORDER_STATUS_LABEL : ORDER_STATUS_LABEL)[order.status] ?? order.status}
         </span>
 
-        <OrderStatusTimeline status={order.status} />
+        <OrderStatusTimeline status={order.status} orderType={order.orderType} />
+
+        {order.orderType === "package_delivery" && (
+          <div className="mt-4 rounded-2xl border border-white/20 bg-white/5 p-4">
+            <p className="text-sm font-semibold text-white/80">Legătură curier</p>
+            <p className="mt-1 text-sm text-white/60">Curier: se alocă…</p>
+          </div>
+        )}
 
         {order.paymentMethod && (
           <p className="mt-2 text-sm text-white/70">

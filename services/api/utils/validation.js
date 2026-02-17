@@ -32,9 +32,11 @@ const createOrderSchema = z.object({
 });
 
 /**
- * Schema MVP: comandă din coș (items, total, delivery, paymentMethod)
+ * Schema MVP: comandă din coș (items, total, delivery, paymentMethod).
+ * orderType: "product_order" (produse + livrare 7 lei) | "package_delivery" (pachet 10 lei).
  */
 const createMvpOrderSchema = z.object({
+  orderType: z.enum(['product_order', 'package_delivery']).optional().default('product_order'),
   items: z.array(
     z.object({
       name: z.string().min(1, 'Numele produsului este obligatoriu').max(200),

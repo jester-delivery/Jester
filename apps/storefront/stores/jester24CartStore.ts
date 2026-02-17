@@ -1,12 +1,16 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
+/**
+ * Coș global: folosit de /jester-24-24, /pizza și orice altă pagină de categorii.
+ * Checkout-ul (e.g. /jester-24-24/checkout) procesează toate items din acest store.
+ */
 export type Jester24CartItem = {
   id: string;
   name: string;
   price: number;
   image: string;
-  section: string;
+  section: string; // ex: "snacks" | "pizza" | "drinks" – doar pentru grupare vizuală
   qty: number;
 };
 

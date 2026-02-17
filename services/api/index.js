@@ -75,6 +75,10 @@ app.use("/orders", ordersRoutes);
 // Cart orders (checkout din coș Jester 24/24); POST limitat la 30/min în router
 app.use("/cart-orders", cartOrdersRoutes);
 
+// Addresses – autocomplete Sulina + validare (public)
+const addressesRoutes = require("./routes/addresses");
+app.use("/addresses", addressesRoutes);
+
 // Admin (protejat: auth + ADMIN_EMAILS)
 const adminRoutes = require("./routes/admin");
 app.use("/admin", adminRoutes);

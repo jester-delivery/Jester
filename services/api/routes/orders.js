@@ -9,16 +9,25 @@ const router = express.Router();
 
 const STATUS_VALUES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'DELIVERING', 'ON_THE_WAY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED', 'CANCELED'];
 
+/** Statusuri în care comanda poate fi ștearsă de user (doar neacceptate). */
+const DELETABLE_STATUSES = ['PENDING'];
+
 /**
  * GET /orders/my
- * Comenzile user-ului logat (ordonate desc după createdAt)
+ * Comenzile user-ului logat (fără șterse). ?includeDeleted=1 pentru admin/debug.
  */
 router.get('/my', authenticateToken, async (req, res) => {
   try {
     const userId = req.userId;
+    const includeDeleted = req.query.includeDeleted === '1';
+
+    const where = { userId };
+    if (!includeDeleted) {
+      where.deletedAt = null;
+    }
 
     const orders = await prisma.cartOrder.findMany({
-      where: { userId },
+      where,
       include: { items: true },
       orderBy: { createdAt: 'desc' },
     });
@@ -79,9 +88,40 @@ router.get('/stream/:orderId', authenticateToken, async (req, res) => {
 
 /**
  * GET /orders/:id
- * Comanda + items, doar dacă order.userId === req.userId
+ * Comanda + items, doar dacă order.userId === req.userId (exclude șterse).
  */
 router.get('/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+
+    const order = await prisma.cartOrder.findFirst({
+      where: { id, userId, deletedAt: null },
+      include: { items: true },
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        error: 'Comandă negăsită',
+        code: 'ORDER_NOT_FOUND',
+      });
+    }
+
+    res.json({ order });
+  } catch (error) {
+    console.error('Error fetching order:', error);
+    res.status(500).json({
+      error: 'Eroare la obținerea comenzii',
+      code: 'FETCH_ORDER_ERROR',
+    });
+  }
+});
+
+/**
+ * DELETE /orders/:id
+ * Soft delete: doar comenzi PENDING, order.userId === session.userId. Setează deletedAt.
+ */
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.userId;
@@ -100,17 +140,36 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     if (order.userId !== userId) {
       return res.status(403).json({
-        error: 'Nu ai permisiunea să accesezi această comandă',
+        error: 'Nu ai permisiunea să ștergi această comandă',
         code: 'FORBIDDEN',
       });
     }
 
-    res.json({ order });
+    if (order.deletedAt) {
+      return res.status(400).json({
+        error: 'Comanda este deja ștearsă',
+        code: 'ALREADY_DELETED',
+      });
+    }
+
+    if (!DELETABLE_STATUSES.includes(order.status)) {
+      return res.status(400).json({
+        error: 'Doar comenzile neacceptate (în așteptare) pot fi șterse.',
+        code: 'ORDER_NOT_DELETABLE',
+      });
+    }
+
+    await prisma.cartOrder.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
+    res.status(204).send();
   } catch (error) {
-    console.error('Error fetching order:', error);
+    console.error('Error deleting order:', error);
     res.status(500).json({
-      error: 'Eroare la obținerea comenzii',
-      code: 'FETCH_ORDER_ERROR',
+      error: 'Eroare la ștergerea comenzii',
+      code: 'DELETE_ORDER_ERROR',
     });
   }
 });

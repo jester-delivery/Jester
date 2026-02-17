@@ -27,6 +27,7 @@ export type CreateAddressInput = {
 export type UpdateAddressInput = Partial<CreateAddressInput> & { isDefault?: boolean };
 export type Order = {
   id: string;
+  orderType?: "product_order" | "package_delivery";
   status: string;
   total: string;
   estimatedDeliveryMinutes?: number | null;
@@ -129,10 +130,12 @@ export const api = {
   
   // Orders (comenzi user, auth obligatoriu)
   orders: {
-    getMy: () => apiClient.get<{ orders: Order[] }>('/orders/my'),
+    getMy: (params?: { includeDeleted?: '1' }) =>
+      apiClient.get<{ orders: Order[] }>('/orders/my', { params }),
     getById: (id: string) => apiClient.get<{ order: Order }>(`/orders/${id}`),
     updateStatus: (id: string, data: { status?: string; estimatedDeliveryMinutes?: number; internalNotes?: string }) =>
       apiClient.patch<{ order: Order }>(`/orders/${id}/status`, data),
+    delete: (id: string) => apiClient.delete(`/orders/${id}`),
   },
 
   // Admin (protejat: auth + ADMIN_EMAILS în .env)
@@ -140,9 +143,18 @@ export const api = {
     getOrders: () => apiClient.get<{ orders: Order[] }>('/admin/orders'),
   },
 
+  // Addresses – autocomplete Sulina + validare (public)
+  addresses: {
+    search: (q: string) =>
+      apiClient.get<{ suggestions: string[] }>('/addresses/search', { params: { q: q || '' } }),
+    validate: (address: string) =>
+      apiClient.get<{ valid: boolean }>('/addresses/validate', { params: { address: address || '' } }),
+  },
+
   // Cart orders: Checkout + status (admin)
   cartOrders: {
     create: (data: {
+      orderType?: 'product_order' | 'package_delivery';
       total: number;
       items: Array<{ name: string; price: number; quantity: number }>;
       deliveryAddress: string;

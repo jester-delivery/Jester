@@ -1,7 +1,7 @@
 "use client";
 
-// Flow: PENDING → CONFIRMED → PREPARING → ON_THE_WAY → DELIVERED
-const STEPS: { status: string; label: string }[] = [
+// Flow food: PENDING → CONFIRMED → PREPARING → ON_THE_WAY → DELIVERED
+const STEPS_FOOD: { status: string; label: string }[] = [
   { status: "PENDING", label: "Plasată" },
   { status: "CONFIRMED", label: "Acceptată" },
   { status: "PREPARING", label: "Se pregătește" },
@@ -9,17 +9,33 @@ const STEPS: { status: string; label: string }[] = [
   { status: "DELIVERED", label: "Livrată" },
 ];
 
-const stepIndex = (status: string): number => {
+// Flow Jester Delivery (pachete): Plasată → Acceptată → Ridicată de curier → Livrată
+const STEPS_PACKAGE: { status: string; label: string }[] = [
+  { status: "PENDING", label: "Plasată" },
+  { status: "CONFIRMED", label: "Acceptată" },
+  { status: "PREPARING", label: "Ridicată de curier" },
+  { status: "DELIVERED", label: "Livrată" },
+];
+
+function stepIndexFood(status: string): number {
   if (status === "OUT_FOR_DELIVERY" || status === "ON_THE_WAY") return 3;
-  const i = STEPS.findIndex((s) => s.status === status);
+  const i = STEPS_FOOD.findIndex((s) => s.status === status);
   return i >= 0 ? i : -1;
-};
+}
 
-type Props = { status: string };
+function stepIndexPackage(status: string): number {
+  if (status === "ON_THE_WAY" || status === "OUT_FOR_DELIVERY" || status === "PREPARING" || status === "READY" || status === "DELIVERING") return 2;
+  const i = STEPS_PACKAGE.findIndex((s) => s.status === status);
+  return i >= 0 ? i : -1;
+}
 
-export default function OrderStatusTimeline({ status }: Props) {
+type Props = { status: string; orderType?: "product_order" | "package_delivery" };
+
+export default function OrderStatusTimeline({ status, orderType }: Props) {
+  const isPackage = orderType === "package_delivery";
+  const STEPS = isPackage ? STEPS_PACKAGE : STEPS_FOOD;
+  const currentIdx = isPackage ? stepIndexPackage(status) : stepIndexFood(status);
   const canceled = status === "CANCELED" || status === "CANCELLED";
-  const currentIdx = stepIndex(status);
 
   return (
     <div className="mt-6 rounded-2xl border border-white/20 bg-white/5 p-4">

@@ -3,10 +3,11 @@
 import { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import BottomNavigation from "@/components/ui/BottomNavigation";
 import Toast from "@/components/ui/Toast";
 import { api, type Order } from "@/lib/api";
-import { getOrderStatusClass, ORDER_STATUS_LABEL } from "@/lib/orderStatus";
+import { getOrderStatusClass, ORDER_STATUS_LABEL, PACKAGE_ORDER_STATUS_LABEL } from "@/lib/orderStatus";
 import { useAuthStore } from "@/stores/authStore";
 
 function formatDate(iso: string) {
@@ -31,17 +32,47 @@ const STATUS_TOAST: Record<string, string> = {
 };
 const STATUS_LABEL = ORDER_STATUS_LABEL;
 
+const DELETABLE_STATUS = "PENDING";
+
 function OrderCard({
   order,
   formatDate,
+  onDelete,
+  showToast,
 }: {
   order: Order;
   formatDate: (iso: string) => string;
+  onDelete: (order: Order) => void;
+  showToast: (msg: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const canDelete = order.status === DELETABLE_STATUS;
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!canDelete) return;
+    setConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setConfirmOpen(false);
+    onDelete(order);
+  };
+
+  const handleCancelDelete = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setConfirmOpen(false);
+  };
+
   return (
-    <li className="rounded-2xl border border-white/20 bg-white/10 overflow-hidden transition hover:border-white/30">
-      <Link href={`/orders/${order.id}`} className="block p-4">
+    <li className="rounded-2xl border border-white/20 bg-white/10 overflow-hidden transition hover:border-white/30 relative">
+      <Link href={`/orders/${order.id}`} className="block p-4 pr-12">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm font-medium text-white/90">
             #{typeof order.id === "string" ? order.id.slice(0, 8) : ""} · {formatDate(order.createdAt)}
@@ -49,7 +80,7 @@ function OrderCard({
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${getOrderStatusClass(order.status)}`}
           >
-            {ORDER_STATUS_LABEL[order.status] ?? order.status}
+            {(order.orderType === "package_delivery" ? PACKAGE_ORDER_STATUS_LABEL : ORDER_STATUS_LABEL)[order.status] ?? order.status}
           </span>
         </div>
         <div className="mt-3 flex items-baseline justify-between gap-2">
@@ -61,6 +92,17 @@ function OrderCard({
           </span>
         </div>
       </Link>
+      {canDelete ? (
+        <button
+          type="button"
+          onClick={handleDeleteClick}
+          className="absolute top-3 right-3 p-2 rounded-lg text-white/60 hover:text-red-400 hover:bg-white/10 transition"
+          title="Șterge comandă"
+          aria-label="Șterge comandă"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={(e) => {
@@ -86,6 +128,44 @@ function OrderCard({
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {confirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          onClick={handleCancelDelete}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-order-title"
+        >
+          <div
+            className="rounded-2xl border border-white/20 bg-[#0a0a12] p-5 max-w-sm w-full shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="delete-order-title" className="text-lg font-semibold text-white">
+              Ștergi comanda?
+            </h2>
+            <p className="mt-2 text-sm text-white/70">
+              Acțiunea nu poate fi anulată.
+            </p>
+            <div className="mt-6 flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={handleCancelDelete}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-white/80 hover:text-white hover:bg-white/10 transition"
+              >
+                Anulează
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 rounded-xl text-sm font-medium bg-red-600 text-white hover:bg-red-500 transition"
+              >
+                Șterge
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </li>
@@ -138,6 +218,20 @@ function OrdersPageContent() {
       setLoading(false);
     }
   }, [showToast]);
+
+  const handleDeleteOrder = useCallback(
+    async (order: Order) => {
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+      showToast("Comandă ștearsă");
+      try {
+        await api.orders.delete(order.id);
+      } catch {
+        showToast("Eroare la ștergere. Reîncarcăm lista.");
+        fetchOrders();
+      }
+    },
+    [showToast, fetchOrders]
+  );
 
   // Redirect la login dacă nu e autentificat
   useEffect(() => {
@@ -228,7 +322,13 @@ function OrdersPageContent() {
         {!loading && !error && orders.length > 0 && (
           <ul className="mt-6 space-y-4">
             {orders.map((order) => (
-              <OrderCard key={order.id} order={order} formatDate={formatDate} />
+              <OrderCard
+                key={order.id}
+                order={order}
+                formatDate={formatDate}
+                onDelete={handleDeleteOrder}
+                showToast={showToast}
+              />
             ))}
           </ul>
         )}

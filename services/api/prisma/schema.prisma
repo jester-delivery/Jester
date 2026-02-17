@@ -112,9 +112,11 @@ model OrderItem {
 model CartOrder {
   id                        String          @id @default(uuid())
   userId                    String?         @map("user_id")
+  orderType                 String          @default("product_order") @map("order_type") // "product_order" | "package_delivery"
   status                    OrderStatus     @default(PENDING)
   total                     Decimal         @db.Decimal(10, 2)
   createdAt                 DateTime        @default(now()) @map("created_at")
+  deletedAt                 DateTime?       @map("deleted_at") // soft delete – doar PENDING poate fi șters
   paymentMethod             String          @default("CASH_ON_DELIVERY") @map("payment_method")
   deliveryAddress           String?         @map("delivery_address")
   phone                     String?

@@ -16,6 +16,20 @@ export const ORDER_STATUS_LABEL: Record<string, string> = {
   CANCELED: "Anulată",
 };
 
+/** Statusuri Jester Delivery (pachete): Plasată → Acceptată → Ridicată de curier → Livrată. Folosit când orderType === "package_delivery". */
+export const PACKAGE_ORDER_STATUS_LABEL: Record<string, string> = {
+  PENDING: "Plasată",
+  CONFIRMED: "Acceptată",
+  PREPARING: "Ridicată de curier",
+  READY: "Ridicată de curier",
+  DELIVERING: "Ridicată de curier",
+  ON_THE_WAY: "Ridicată de curier",
+  OUT_FOR_DELIVERY: "Ridicată de curier",
+  DELIVERED: "Livrată",
+  CANCELLED: "Anulată",
+  CANCELED: "Anulată",
+};
+
 /** Statusuri finale – comanda nu mai poate fi modificată */
 export const FINAL_ORDER_STATUSES = ["DELIVERED", "CANCELLED", "CANCELED"] as const;
 

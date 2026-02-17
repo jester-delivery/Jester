@@ -83,14 +83,14 @@ function RegisterContent() {
   const confirmInvalid = touched.confirmPassword && formData.password !== formData.confirmPassword;
 
   return (
-    <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24">
+    <main className="relative z-10 min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24 isolate">
       <div className="container mx-auto px-4 py-10 max-w-md">
         <div className="mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold mb-2">Creează cont</h1>
           <p className="text-white/70 text-sm sm:text-base">Înregistrează-te pentru a începe</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 relative z-10" style={{ touchAction: "manipulation" }}>
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-white/90 mb-2">
               Nume complet *
