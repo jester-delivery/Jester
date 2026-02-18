@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useJester24CartStore } from "@/stores/jester24CartStore";
 import { useAuthStore } from "@/stores/authStore";
+import { useAuthReady } from "@/hooks/useAuthReady";
 import { useDeliveryAddressStore } from "@/stores/deliveryAddressStore";
 import { api, type Address } from "@/lib/api";
 import { PRODUCT_DELIVERY_FEE, VAT_RATE } from "@/lib/config/delivery";
@@ -21,6 +22,7 @@ function formatAddressForOrder(addr: Address) {
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const authReady = useAuthReady();
   const { isAuthenticated, user } = useAuthStore();
   const items = useJester24CartStore((s) => s.items);
   const getTotalPrice = useJester24CartStore((s) => s.getTotalPrice);
@@ -40,7 +42,12 @@ export default function CheckoutPage() {
   const [showAddressInput, setShowAddressInput] = useState(false);
   const [showAddressSelector, setShowAddressSelector] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [addressSuggestions, setAddressSuggestions] = useState<string[]>([]);
+  const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
+  const addressInputRef = useRef<HTMLInputElement>(null);
   const submittedRef = useRef(false);
+  const idempotencyKeyRef = useRef<string | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -89,11 +96,36 @@ export default function CheckoutPage() {
   }, [mounted, isAuthenticated, user, deliveryStoreAddress]);
 
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || !authReady) return;
     if (!isAuthenticated || !user) {
+      const token = typeof window !== "undefined" ? localStorage.getItem("jester_token") : null;
+      if (token) return;
       router.replace("/login?next=" + encodeURIComponent("/jester-24-24/checkout"));
     }
-  }, [mounted, isAuthenticated, user, router]);
+  }, [mounted, authReady, isAuthenticated, user, router]);
+
+  // Autocomplete adrese Sulina: la tastare, cerem sugestii din listă
+  useEffect(() => {
+    const q = address.trim();
+    if (!q || q.length < 2) {
+      setAddressSuggestions([]);
+      setShowAddressSuggestions(false);
+      return;
+    }
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      api.addresses
+        .search(q)
+        .then((res) => {
+          setAddressSuggestions(res.data.suggestions ?? []);
+          setShowAddressSuggestions(true);
+        })
+        .catch(() => setAddressSuggestions([]));
+    }, 200);
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
+  }, [address]);
 
   // Subtotal = doar produse; livrare 7 lei; total = subtotal + livrare
   const subtotal = mounted ? getTotalPrice() : 0;
@@ -149,9 +181,10 @@ export default function CheckoutPage() {
 
     submittedRef.current = true;
     setLoading(true);
+    setErrors({});
     try {
       const subtotalNum = Number(getTotalPrice());
-      const totalNum = subtotalNum + PRODUCT_DELIVERY_FEE;
+      const totalNum = Math.round((subtotalNum + PRODUCT_DELIVERY_FEE) * 100) / 100;
       const payload = {
         orderType: "product_order" as const,
         total: totalNum,
@@ -159,6 +192,7 @@ export default function CheckoutPage() {
           name: String(i.name),
           price: Number(i.price),
           quantity: Math.max(1, Math.floor(Number(i.qty) || 1)),
+          productId: i.id,
         })),
         deliveryAddress: address.trim(),
         phone: phone.trim(),
@@ -167,15 +201,23 @@ export default function CheckoutPage() {
         paymentMethod: (paymentMethod === "cash" ? "CASH_ON_DELIVERY" : "CARD") as "CASH_ON_DELIVERY" | "CARD",
       };
 
-      await api.cartOrders.create(payload);
+      if (!idempotencyKeyRef.current) {
+        idempotencyKeyRef.current = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `ck-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      }
+      await api.cartOrders.create(payload, { idempotencyKey: idempotencyKeyRef.current });
       clearCart();
       setToastMessage("Comandă plasată cu succes");
       setTimeout(() => {
         router.push("/orders?placed=1");
       }, 600);
-    } catch {
+    } catch (err: unknown) {
       submittedRef.current = false;
-      setErrors({ submit: "Eroare la plasarea comenzii. Încearcă din nou." });
+      const res = (err as { response?: { data?: { error?: string; code?: string }; status?: number } })?.response;
+      const msg =
+        res?.status === 409 && res?.data?.code === "TOTAL_MISMATCH"
+          ? "Prețurile s-au actualizat. Reîmprospătează pagina și plasează din nou comanda."
+          : res?.data?.error || "Eroare la plasarea comenzii. Încearcă din nou.";
+      setErrors({ submit: msg });
     } finally {
       setLoading(false);
     }
@@ -190,7 +232,7 @@ export default function CheckoutPage() {
 
   const hasSavedAddress = !showAddressInput && address.length >= 5;
 
-  if (!mounted) {
+  if (!mounted || !authReady || (!isAuthenticated && typeof window !== "undefined" && localStorage.getItem("jester_token"))) {
     return (
       <main className="min-h-screen bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24 text-white">
         <div className="mx-auto max-w-2xl px-4 py-12 text-center">
@@ -280,20 +322,47 @@ export default function CheckoutPage() {
                 </div>
               </div>
             ) : (
-              <>
+              <div className="relative">
                 <input
+                  ref={addressInputRef}
                   type="text"
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Strada, număr, bloc, scara, apartament, oraș"
+                  onFocus={() => address.trim().length >= 2 && setShowAddressSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowAddressSuggestions(false), 150)}
+                  placeholder="Scrie adresa (ex: Str. 1 Decembrie) și alege din listă"
                   className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-white placeholder:text-white/40 focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/40"
                   required
                   minLength={5}
+                  autoComplete="off"
                 />
+                <p className="mt-1 text-xs text-white/50">Livrăm doar în Sulina. Alege o adresă din listă.</p>
+                {showAddressSuggestions && addressSuggestions.length > 0 && (
+                  <ul
+                    className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-white/20 bg-[#0a0a12] shadow-xl"
+                    role="listbox"
+                  >
+                    {addressSuggestions.map((s) => (
+                      <li
+                        key={s}
+                        role="option"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setAddress(s);
+                          setShowAddressSuggestions(false);
+                          setDeliveryStoreAddress(s);
+                        }}
+                        className="px-4 py-3 text-sm text-white/90 hover:bg-white/10 cursor-pointer border-b border-white/5 last:border-0"
+                      >
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {errors.address && (
                   <p className="mt-1 text-sm text-red-400">{errors.address}</p>
                 )}
-              </>
+              </div>
             )}
           </div>
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, type Order } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
+import { useAuthReady } from "@/hooks/useAuthReady";
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "În așteptare",
@@ -31,6 +32,7 @@ function formatDate(iso: string) {
 
 export default function Jester2424AdminPage() {
   const router = useRouter();
+  const authReady = useAuthReady();
   const { isAuthenticated, user } = useAuthStore();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,15 +107,25 @@ export default function Jester2424AdminPage() {
   };
 
   useEffect(() => {
+    if (!authReady) return;
     if (!isAuthenticated || !user) {
+      const token = typeof window !== "undefined" ? localStorage.getItem("jester_token") : null;
+      if (token) return;
       router.replace("/login?next=" + encodeURIComponent("/jester-24-24/admin"));
       return;
     }
     fetchOrders();
     const interval = setInterval(fetchOrders, 8000);
     return () => clearInterval(interval);
-  }, [isAuthenticated, user, router, fetchOrders]);
+  }, [authReady, isAuthenticated, user, router, fetchOrders]);
 
+  if (!authReady || (!isAuthenticated && typeof window !== "undefined" && localStorage.getItem("jester_token"))) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] text-white">
+        <p className="text-white/70">Se încarcă...</p>
+      </main>
+    );
+  }
   if (!isAuthenticated || !user) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] text-white">
@@ -131,6 +143,12 @@ export default function Jester2424AdminPage() {
             className="text-sm text-white/70 underline hover:text-white"
           >
             ← Jester 24/24
+          </Link>
+          <Link
+            href="/jester-24-24/admin/products"
+            className="text-sm text-amber-400 underline hover:text-amber-300"
+          >
+            Produse
           </Link>
         </div>
         <h1 className="text-2xl font-bold sm:text-3xl">Comenzi (admin)</h1>

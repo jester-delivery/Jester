@@ -8,7 +8,7 @@ import Toast from "@/components/ui/Toast";
 import CartDrawer from "@/components/jester24/CartDrawer";
 import CartHeaderButton from "@/components/jester24/CartHeaderButton";
 import Jester24BottomBarSwitcher from "@/components/jester24/Jester24BottomBarSwitcher";
-import { PIZZA_PRODUCTS } from "@/lib/data/pizza-products";
+import { useCategory } from "@/lib/useCategory";
 import { useJester24CartStore } from "@/stores/jester24CartStore";
 
 const PIZZA_HEADER_IMAGE = "https://i.imgur.com/W5X0s4C.jpeg";
@@ -17,12 +17,12 @@ const SECTION_PIZZA = "pizza";
 
 export default function PizzaPage() {
   const router = useRouter();
+  const { products, loading, error, refetch } = useCategory("pizza");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const items = useJester24CartStore((s) => s.items);
-  const getTotalPrice = useJester24CartStore((s) => s.getTotalPrice);
 
   const showToast = useCallback((msg: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -45,7 +45,6 @@ export default function PizzaPage() {
 
   return (
     <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24">
-      {/* Header card: titlu + imagine */}
       <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-[#050610]/90 backdrop-blur-md safe-area-inset-top">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 pt-4 pb-4">
           <div className="min-w-0 flex-1">
@@ -71,22 +70,29 @@ export default function PizzaPage() {
         </div>
       </header>
 
-      {/* Listă produse – același pattern ca Jester 24/24, coș global */}
       <div className="mx-auto max-w-4xl px-4 py-6">
-        <div className="flex flex-col gap-3">
-          {PIZZA_PRODUCTS.map((product) => (
-            <ProductRow
-              key={product.id}
-              id={product.id}
-              section={SECTION_PIZZA}
-              name={product.name}
-              description={product.description}
-              price={product.price}
-              image={product.image}
-              showToast={showToast}
-            />
-          ))}
-        </div>
+        {loading && <p className="text-white/70">Se încarcă produsele...</p>}
+        {error && <p className="text-red-300">{error}</p>}
+        {!loading && !error && products.length === 0 && (
+          <p className="text-white/70">Niciun produs momentan.</p>
+        )}
+        {!loading && !error && products.length > 0 && (
+          <div className="flex flex-col gap-3">
+            {products.map((product) => (
+              <ProductRow
+                key={product.id}
+                id={product.id}
+                section={SECTION_PIZZA}
+                name={product.name}
+                description={product.description ?? undefined}
+                price={Number(product.price)}
+                image={product.image ?? "https://i.imgur.com/W5X0s4C.jpeg"}
+                isAvailable={product.isAvailable}
+                showToast={showToast}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <CartDrawer

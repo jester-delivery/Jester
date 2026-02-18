@@ -15,54 +15,36 @@ const DEBUG_CROSSHAIR = false;
 type Bubble = {
   title: string;
   href: string;
-  /** Poziții fixe în % (string) – deterministe, fără var() / random / resize. */
   left: string;
   top: string;
   size: number;
   priority?: boolean;
 };
 
-/**
- * Poziții fixe, deterministe. Un singur set de procente – layout stabil la orice refresh.
- * Jester centru; Pizza sus / Bake jos; Supply/Grill sus; Delivery/Antiq jos; simetrie stânga/dreapta.
- */
+/** Poziții inline, fără animație – garantat în cadru pe toate ecranele (procente conservatoare). */
 const bubbles: Bubble[] = [
   { title: "Jester 24/24", href: "/jester-24-24", left: "50%", top: "50%", size: 200, priority: true },
-  { title: "Pizza", href: "/pizza", left: "50%", top: "27%", size: 140 },
-  { title: "Bake", href: "/bake", left: "50%", top: "73%", size: 140 },
-  { title: "Supply", href: "/supply", left: "20%", top: "37%", size: 130 },
-  { title: "Grill", href: "/grill", left: "80%", top: "37%", size: 130 },
-  { title: "Jester Delivery", href: "/delivery", left: "20%", top: "63%", size: 130 },
-  { title: "Antiq", href: "/antiq", left: "80%", top: "63%", size: 130 },
+  { title: "Pizza", href: "/pizza", left: "50%", top: "28%", size: 140 },
+  { title: "Bake", href: "/bake", left: "50%", top: "72%", size: 140 },
+  { title: "Supply", href: "/supply", left: "30%", top: "38%", size: 130 },
+  { title: "Grill", href: "/grill", left: "70%", top: "38%", size: 130 },
+  { title: "Jester Delivery", href: "/delivery", left: "30%", top: "62%", size: 130 },
+  { title: "Antiq", href: "/antiq", left: "70%", top: "62%", size: 130 },
 ];
 
-type BubbleItemProps = Bubble & {
-  floatDelay?: number;
-  floatIndex?: number;
-};
+type BubbleItemProps = Bubble;
 
-function BubbleItem({
-  title,
-  href,
-  left,
-  top,
-  size,
-  priority,
-  floatDelay = 0,
-  floatIndex = 0,
-}: BubbleItemProps) {
-  const floatClass = floatIndex % 2 === 1 ? "animate-bubble-float-alt" : "animate-bubble-float";
-  const bubbleSize = `clamp(${size * 0.6}px, ${size * 0.8}vw, ${size}px)`;
+function BubbleItem({ title, href, left, top, size, priority }: BubbleItemProps) {
+  const bubbleSize = `clamp(${Math.round(size * 0.45)}px, min(${size}px, 24vw), ${size}px)`;
 
   return (
     <div
-      className={`absolute -translate-x-1/2 -translate-y-1/2 ${floatClass}`}
+      className="absolute -translate-x-1/2 -translate-y-1/2"
       style={{
         left,
         top,
         width: bubbleSize,
         height: bubbleSize,
-        ...(floatDelay ? { animationDelay: `${floatDelay}s` } : {}),
       }}
     >
       <Link
@@ -93,9 +75,7 @@ function BubbleItem({
 }
 
 /**
- * BubbleHub: poziții fixe și deterministe. 100vh evită jitter-ul de la 100dvh (browser chrome).
- * Pozițiile sunt procente fixe în Tailwind – fără random, fără calc la resize.
- * Animațiile (pulsare) rămân pe BubbleItem.
+ * BubbleHub: poziții inline (left/top %), fără animație – bulele rămân în cadru pe toate ecranele.
  */
 export default function BubbleHub() {
   const playgroundHeight = `calc(100vh - ${SEARCH_AREA_HEIGHT_PX}px - ${BOTTOM_NAV_HEIGHT_PX}px)`;
@@ -113,13 +93,8 @@ export default function BubbleHub() {
             <div className="absolute top-1/2 left-0 right-0 h-px bg-red-500/60 -translate-y-1/2 pointer-events-none z-0" />
           </>
         )}
-        {bubbles.map((bubble, i) => (
-          <BubbleItem
-            key={bubble.title}
-            {...bubble}
-            floatDelay={i * 0.4}
-            floatIndex={i}
-          />
+        {bubbles.map((bubble) => (
+          <BubbleItem key={bubble.title} {...bubble} />
         ))}
       </div>
     </section>

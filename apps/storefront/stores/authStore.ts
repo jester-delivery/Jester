@@ -7,6 +7,7 @@ type User = {
   email: string;
   name: string;
   phone?: string | null;
+  role?: 'USER' | 'ADMIN' | 'COURIER';
   createdAt?: string;
   updatedAt?: string;
 };

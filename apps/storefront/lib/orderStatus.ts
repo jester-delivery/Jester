@@ -6,6 +6,7 @@
 export const ORDER_STATUS_LABEL: Record<string, string> = {
   PENDING: "În așteptare",
   CONFIRMED: "Acceptată",
+  ACCEPTED: "Acceptată",
   PREPARING: "Se pregătește",
   READY: "Gata",
   DELIVERING: "În livrare",

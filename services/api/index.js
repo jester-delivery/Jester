@@ -34,10 +34,16 @@ app.use(cors());
 app.use(express.json());
 app.use(apiLimiter);
 
-// Health (primul rând – fără dependențe grele)
-const { isSmtpConfigured } = require("./services/emailService");
-app.get("/health", (req, res) => {
-  res.json({ ok: true, smtpConfigured: isSmtpConfigured() });
+// Health – verifică conexiunea la DB; 200 { status: "ok" } sau 500
+const prisma = require("./utils/prisma");
+app.get("/health", async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({ status: "ok" });
+  } catch (err) {
+    console.error("[health] DB check failed:", err);
+    res.status(500).json({ status: "error", error: "DB unreachable" });
+  }
 });
 
 // Routes
@@ -82,6 +88,10 @@ app.use("/addresses", addressesRoutes);
 // Admin (protejat: auth + ADMIN_EMAILS)
 const adminRoutes = require("./routes/admin");
 app.use("/admin", adminRoutes);
+
+// Courier (protejat: auth + rol COURIER sau ADMIN)
+const courierRoutes = require("./routes/courier");
+app.use("/courier", courierRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

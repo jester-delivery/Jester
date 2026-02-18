@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
+import { useAuthReady } from "@/hooks/useAuthReady";
 import { api, type Address } from "@/lib/api";
 import { PACKAGE_DELIVERY_FEE } from "@/lib/config/delivery";
 import Toast from "@/components/ui/Toast";
@@ -13,6 +14,95 @@ const TOAST_DURATION_MS = 3000;
 
 type ServiceType = "trimite" | "primeste";
 type AddressSource = "saved" | "custom";
+
+const inputBase =
+  "w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500/50 transition";
+const inputErr = "border-red-500/50 focus:ring-red-500/30";
+
+type AddressSourceToggleProps = {
+  source: AddressSource;
+  onSource: (s: AddressSource) => void;
+  selectedId: string | null;
+  onSelectId: (id: string | null) => void;
+  customValue: string;
+  onCustomValue: (v: string) => void;
+  label: string;
+  errorKey: string;
+  hasSavedAddresses: boolean;
+  addresses: Address[];
+  errors: Record<string, string>;
+};
+
+function AddressSourceToggle({
+  source,
+  onSource,
+  selectedId,
+  onSelectId,
+  customValue,
+  onCustomValue,
+  label,
+  errorKey,
+  hasSavedAddresses,
+  addresses,
+  errors,
+}: AddressSourceToggleProps) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-white/70">{label}</label>
+      {hasSavedAddresses && (
+        <div className="mb-2 flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              onSource("saved");
+              onSelectId(addresses[0]?.id ?? null);
+            }}
+            className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
+              source === "saved" ? "border-amber-500/60 bg-amber-500/20 text-white" : "border-white/20 bg-white/5 text-white/80"
+            }`}
+          >
+            Alege din adrese salvate
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onSource("custom");
+              onSelectId(null);
+            }}
+            className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
+              source === "custom" ? "border-amber-500/60 bg-amber-500/20 text-white" : "border-white/20 bg-white/5 text-white/80"
+            }`}
+          >
+            Altă adresă
+          </button>
+        </div>
+      )}
+      {source === "saved" && hasSavedAddresses ? (
+        <select
+          value={selectedId ?? ""}
+          onChange={(e) => onSelectId(e.target.value || null)}
+          className={`${inputBase} ${errors[errorKey] ? inputErr : ""}`}
+        >
+          <option value="">Selectează adresa</option>
+          {addresses.map((addr) => (
+            <option key={addr.id} value={addr.id}>
+              {addr.street}, {addr.city}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          type="text"
+          value={customValue}
+          onChange={(e) => onCustomValue(e.target.value)}
+          className={`${inputBase} ${errors[errorKey] ? inputErr : ""}`}
+          placeholder={label}
+        />
+      )}
+      {errors[errorKey] && <p className="mt-1 text-xs text-red-400">{errors[errorKey]}</p>}
+    </div>
+  );
+}
 
 function formatAddressLine(addr: Address): string {
   const parts = [addr.street];
@@ -24,6 +114,7 @@ function formatAddressLine(addr: Address): string {
 
 export default function DeliveryPage() {
   const router = useRouter();
+  const authReady = useAuthReady();
   const { isAuthenticated, user } = useAuthStore();
   const [mounted, setMounted] = useState(false);
   const [serviceType, setServiceType] = useState<ServiceType>("trimite");
@@ -61,6 +152,7 @@ export default function DeliveryPage() {
   const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idempotencyKeyRef = useRef<string | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -83,11 +175,13 @@ export default function DeliveryPage() {
   }, [mounted, isAuthenticated, user, serviceType]);
 
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || !authReady) return;
     if (!isAuthenticated || !user) {
+      const token = typeof window !== "undefined" ? localStorage.getItem("jester_token") : null;
+      if (token) return;
       router.replace("/login?next=" + encodeURIComponent("/delivery"));
     }
-  }, [mounted, isAuthenticated, user, router]);
+  }, [mounted, authReady, isAuthenticated, user, router]);
 
   const showToast = useCallback((msg: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -213,31 +307,44 @@ export default function DeliveryPage() {
       const notes = notesParts.join("\n");
       const deliveryAddr = serviceType === "trimite" ? getAdresaPredareValue() : getAdresaLivrareValue();
 
-      await api.cartOrders.create({
-        orderType: "package_delivery",
-        items: [{ name: "Serviciu livrare pachet", price: PACKAGE_DELIVERY_FEE, quantity: 1 }],
-        total: PACKAGE_DELIVERY_FEE,
-        deliveryAddress: deliveryAddr,
-        phone: telefonDestinatar.trim(),
-        name: numeDestinatar.trim(),
-        notes,
-        paymentMethod: "CASH_ON_DELIVERY",
-      });
+      if (!idempotencyKeyRef.current) {
+        idempotencyKeyRef.current = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `pk-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      }
+      await api.cartOrders.create(
+        {
+          orderType: "package_delivery",
+          items: [{ name: "Serviciu livrare pachet", price: PACKAGE_DELIVERY_FEE, quantity: 1 }],
+          total: PACKAGE_DELIVERY_FEE,
+          deliveryAddress: deliveryAddr,
+          phone: telefonDestinatar.trim(),
+          name: numeDestinatar.trim(),
+          notes,
+          paymentMethod: "CASH_ON_DELIVERY",
+        },
+        { idempotencyKey: idempotencyKeyRef.current }
+      );
       showToast("Solicitarea ta a fost trimisă");
       router.push("/orders");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Eroare la trimitere. Încearcă din nou.";
+      const res = (err as { response?: { data?: { error?: string; code?: string }; status?: number } })?.response;
+      const msg =
+        res?.status === 409 && res?.data?.code === "TOTAL_MISMATCH"
+          ? "Tariful s-a actualizat. Reîmprospătează pagina și trimite din nou."
+          : res?.data?.error ?? "Eroare la trimitere. Încearcă din nou.";
       setErrors({ submit: msg });
     } finally {
       setLoading(false);
     }
   };
 
-  const inputBase =
-    "w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500/50 transition";
-  const inputErr = "border-red-500/50 focus:ring-red-500/30";
-
-  if (!mounted || !isAuthenticated || !user) {
+  if (!mounted || !authReady || (!isAuthenticated && typeof window !== "undefined" && localStorage.getItem("jester_token"))) {
+    return (
+      <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] flex items-center justify-center">
+        <p className="text-white/70">Se încarcă...</p>
+      </main>
+    );
+  }
+  if (!isAuthenticated || !user) {
     return (
       <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] flex items-center justify-center">
         <p className="text-white/70">Se redirecționează la login...</p>
@@ -246,80 +353,6 @@ export default function DeliveryPage() {
   }
 
   const hasSavedAddresses = addresses.length > 0;
-  const AddressSourceToggle = ({
-    source,
-    onSource,
-    selectedId,
-    onSelectId,
-    customValue,
-    onCustomValue,
-    label,
-    errorKey,
-  }: {
-    source: AddressSource;
-    onSource: (s: AddressSource) => void;
-    selectedId: string | null;
-    onSelectId: (id: string | null) => void;
-    customValue: string;
-    onCustomValue: (v: string) => void;
-    label: string;
-    errorKey: string;
-  }) => (
-    <div>
-      <label className="mb-1 block text-xs text-white/70">{label}</label>
-      {hasSavedAddresses && (
-        <div className="mb-2 flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              onSource("saved");
-              onSelectId(addresses[0]?.id ?? null);
-            }}
-            className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
-              source === "saved" ? "border-amber-500/60 bg-amber-500/20 text-white" : "border-white/20 bg-white/5 text-white/80"
-            }`}
-          >
-            Alege din adrese salvate
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onSource("custom");
-              onSelectId(null);
-            }}
-            className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
-              source === "custom" ? "border-amber-500/60 bg-amber-500/20 text-white" : "border-white/20 bg-white/5 text-white/80"
-            }`}
-          >
-            Altă adresă
-          </button>
-        </div>
-      )}
-      {source === "saved" && hasSavedAddresses ? (
-        <select
-          value={selectedId ?? ""}
-          onChange={(e) => onSelectId(e.target.value || null)}
-          className={`${inputBase} ${errors[errorKey] ? inputErr : ""}`}
-        >
-          <option value="">Selectează adresa</option>
-          {addresses.map((addr) => (
-            <option key={addr.id} value={addr.id}>
-              {addr.street}, {addr.city}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          type="text"
-          value={customValue}
-          onChange={(e) => onCustomValue(e.target.value)}
-          className={`${inputBase} ${errors[errorKey] ? inputErr : ""}`}
-          placeholder={label}
-        />
-      )}
-      {errors[errorKey] && <p className="mt-1 text-xs text-red-400">{errors[errorKey]}</p>}
-    </div>
-  );
 
   return (
     <main className="relative z-10 min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-12 isolate">
@@ -401,6 +434,9 @@ export default function DeliveryPage() {
                     onCustomValue={setAdresaRidicare}
                     label="Adresă ridicare"
                     errorKey="adresaRidicare"
+                    hasSavedAddresses={hasSavedAddresses}
+                    addresses={addresses}
+                    errors={errors}
                   />
                   <div>
                     <label className="mb-1 block text-xs text-white/70">Reper (opțional)</label>
@@ -459,6 +495,9 @@ export default function DeliveryPage() {
                     onCustomValue={setAdresaPredare}
                     label="Adresă predare"
                     errorKey="adresaPredare"
+                    hasSavedAddresses={hasSavedAddresses}
+                    addresses={addresses}
+                    errors={errors}
                   />
                   <div>
                     <label className="mb-1 block text-xs text-white/70">Reper (opțional)</label>
@@ -529,6 +568,9 @@ export default function DeliveryPage() {
                     onCustomValue={setAdresaLivrare}
                     label="Adresă livrare"
                     errorKey="adresaLivrare"
+                    hasSavedAddresses={hasSavedAddresses}
+                    addresses={addresses}
+                    errors={errors}
                   />
                   <div>
                     <label className="mb-1 block text-xs text-white/70">Reper (opțional)</label>

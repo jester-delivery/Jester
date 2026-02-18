@@ -61,6 +61,7 @@ function ProfilePageContent() {
   }
 
   const initial = (user.name || "?").charAt(0).toUpperCase();
+  const isCourier = user.role === "COURIER" || user.role === "ADMIN";
 
   return (
     <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-28">
@@ -73,6 +74,29 @@ function ProfilePageContent() {
           <h1 className="text-xl font-semibold text-white mb-1">{user.name}</h1>
           <p className="text-white/70 text-sm">{user.email}</p>
         </header>
+
+        {/* Dashboard Curier – vizibil doar pentru curieri / admin */}
+        {isCourier && (
+          <section className="mb-4">
+            <Link
+              href="/courier"
+              className="flex items-center gap-4 w-full p-4 rounded-2xl bg-amber-500/20 backdrop-blur-md border border-amber-500/40 hover:bg-amber-500/30 transition"
+            >
+              <div className="w-10 h-10 rounded-xl bg-amber-500/30 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8 4-8-4m0 0l8-4 8 4m0-6v12" />
+                </svg>
+              </div>
+              <div className="flex-1 text-left">
+                <span className="font-semibold text-amber-200">Dashboard Curier</span>
+                <p className="text-amber-200/80 text-sm">Acceptă livrări, marchează status, vezi comenzile tale</p>
+              </div>
+              <svg className="w-5 h-5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          </section>
+        )}
 
         {/* Card: Orders – prima opțiune importantă */}
         <section className="mb-4">

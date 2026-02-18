@@ -42,6 +42,7 @@ const createMvpOrderSchema = z.object({
       name: z.string().min(1, 'Numele produsului este obligatoriu').max(200),
       price: z.number().nonnegative('Prețul trebuie să fie >= 0').max(99999.99),
       quantity: z.number().int().positive('Cantitatea trebuie să fie un număr pozitiv').max(99),
+      productId: z.string().max(36).optional().transform((v) => (v == null || v === '' ? undefined : v)),
     })
   ).min(1, 'Comanda trebuie să conțină cel puțin un produs').max(100, 'Comanda poate avea maxim 100 produse'),
   total: z.number().nonnegative('Totalul trebuie să fie >= 0').max(999999.99),
@@ -113,6 +114,23 @@ const updateOrderStatusSchema = z.object({
 });
 
 /**
+ * Schema PATCH /admin/products/:id – CRUD complet: name, description, price, image, categorySlug, isActive, available, sortOrder, stock
+ */
+const updateProductSchema = z.object({
+  name: z.string().min(1, 'Numele este obligatoriu').max(200).optional(),
+  description: z.string().max(2000).optional().nullable(),
+  price: z.number().nonnegative('Prețul trebuie >= 0').max(99999.99).optional(),
+  image: z.string().url('URL imagine invalid').max(500).optional().nullable(),
+  categorySlug: z.string().min(1).max(100).optional(),
+  isActive: z.boolean().optional(),
+  available: z.boolean().optional(),
+  sortOrder: z.number().int().optional().nullable(),
+  stock: z.number().int().min(0).optional().nullable(),
+}).refine((d) => Object.keys(d).length > 0, {
+  message: 'Cel puțin un câmp este necesar',
+});
+
+/**
  * Middleware pentru validare cu Zod
  * @param {z.ZodSchema} schema - Schema Zod pentru validare
  */
@@ -145,6 +163,7 @@ module.exports = {
   createOrderSchema,
   createMvpOrderSchema,
   updateOrderStatusSchema,
+  updateProductSchema,
   updateMeSchema,
   createAddressSchema,
   updateAddressSchema,

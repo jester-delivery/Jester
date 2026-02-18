@@ -1,6 +1,6 @@
 /**
- * Date mock pentru pagina Jester 24/24
- * Categorii: Snacks, Drinks, Tobacco
+ * Date pentru pagina Jester 24/24
+ * Categorii: Snacks, Băuturi, Țigări și Accesorii
  */
 
 const CATEGORY_IMAGE = "https://i.imgur.com/W5X0s4C.jpeg";
@@ -43,7 +43,7 @@ export const JESTER24_CATEGORIES: Jester24Category[] = [
   {
     id: "drinks",
     slug: "drinks",
-    label: "Drinks",
+    label: "Băuturi",
     image: CATEGORY_IMAGE,
     products: [
       { id: "d1", name: "Pepsi", price: 6, image: CATEGORY_IMAGE },
@@ -61,7 +61,7 @@ export const JESTER24_CATEGORIES: Jester24Category[] = [
   {
     id: "tobacco",
     slug: "tobacco",
-    label: "Tobacco",
+    label: "Țigări și Accesorii",
     image: CATEGORY_IMAGE,
     products: [
       { id: "t1", name: "Kent Classic", price: 28, image: CATEGORY_IMAGE, restricted18: true },

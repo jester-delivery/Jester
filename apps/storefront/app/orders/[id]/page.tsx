@@ -8,11 +8,13 @@ import Toast from "@/components/ui/Toast";
 import { api, type Order } from "@/lib/api";
 import { getOrderStatusClass, ORDER_STATUS_LABEL, PACKAGE_ORDER_STATUS_LABEL } from "@/lib/orderStatus";
 import { useAuthStore } from "@/stores/authStore";
+import { useAuthReady } from "@/hooks/useAuthReady";
 import { useOrderStream } from "@/lib/useOrderStream";
 import OrderStatusTimeline from "@/components/orders/OrderStatusTimeline";
 
-const LIVE_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "ON_THE_WAY", "OUT_FOR_DELIVERY"];
+const LIVE_STATUSES = ["PENDING", "ACCEPTED", "CONFIRMED", "PREPARING", "ON_THE_WAY", "OUT_FOR_DELIVERY"];
 const STATUS_TOAST: Record<string, string> = {
+  ACCEPTED: "Comanda ta a fost acceptată!",
   CONFIRMED: "Comanda ta a fost acceptată!",
   PREPARING: "Comanda ta se pregătește.",
   ON_THE_WAY: "Comanda ta e în drum spre tine!",
@@ -37,6 +39,7 @@ function OrderDetailContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const justPlaced = searchParams.get("placed") === "1";
+  const authReady = useAuthReady();
   const { isAuthenticated, user } = useAuthStore();
   const id = params?.id as string | undefined;
   const [order, setOrder] = useState<Order | null>(null);
@@ -55,11 +58,23 @@ function OrderDetailContent() {
     }, 3500);
   }, []);
 
+  const lastStatusToastRef = useRef<{ status: string; at: number } | null>(null);
+  const TOAST_DEDUPE_MS = 4000;
+
   const handleStatusChange = useCallback(
-    (status: string, orderPayload: unknown) => {
-      if (orderPayload && typeof orderPayload === "object" && "status" in orderPayload) {
-        setOrder(orderPayload as Order);
+    (status: string, payload: unknown) => {
+      const p = payload && typeof payload === "object" ? (payload as { order?: Order; reason?: string }) : {};
+      if (p.order) setOrder(p.order);
+      const isRefusal = p.reason === "courier_refused";
+      if (isRefusal) {
+        showToast("Un curier a refuzat comanda. Căutăm alt curier.");
+        if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        return;
       }
+      const now = Date.now();
+      const last = lastStatusToastRef.current;
+      if (last && last.status === status && now - last.at < TOAST_DEDUPE_MS) return;
+      lastStatusToastRef.current = { status, at: now };
       const msg = STATUS_TOAST[status] ?? `Comanda ta: ${ORDER_STATUS_LABEL[status] ?? status}`;
       showToast(msg);
       if (typeof navigator !== "undefined" && navigator.vibrate) {
@@ -93,10 +108,13 @@ function OrderDetailContent() {
   }, [id]);
 
   useEffect(() => {
+    if (!authReady) return;
     if (!isAuthenticated || !user) {
+      const token = typeof window !== "undefined" ? localStorage.getItem("jester_token") : null;
+      if (token) return;
       router.replace("/login?next=" + encodeURIComponent("/orders/" + (id || "")));
     }
-  }, [isAuthenticated, user, router, id]);
+  }, [authReady, isAuthenticated, user, router, id]);
 
   useEffect(() => {
     if (!isAuthenticated || !user) return;
@@ -112,6 +130,14 @@ function OrderDetailContent() {
 
   /* SSE înlocuiește polling - useOrderStream se ocupă de update-uri real-time */
 
+  if (!authReady || (!isAuthenticated && typeof window !== "undefined" && localStorage.getItem("jester_token"))) {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24 text-white flex items-center justify-center">
+        <p className="text-white/70">Se încarcă...</p>
+        <BottomNavigation />
+      </main>
+    );
+  }
   if (!isAuthenticated || !user) {
     return (
       <main className="min-h-screen bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24 text-white flex items-center justify-center">

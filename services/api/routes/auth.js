@@ -44,6 +44,7 @@ router.post('/register', validate(registerSchema), async (req, res) => {
         email: true,
         name: true,
         phone: true,
+        role: true,
         createdAt: true,
         // Nu returnăm passwordHash
       },
@@ -67,6 +68,7 @@ router.post('/register', validate(registerSchema), async (req, res) => {
         email: user.email,
         name: user.name,
         phone: user.phone,
+        role: user.role ?? 'USER',
       },
     });
   } catch (error) {
@@ -119,6 +121,7 @@ router.post('/login', validate(loginSchema), async (req, res) => {
         email: user.email,
         name: user.name,
         phone: user.phone,
+        role: user.role ?? 'USER',
       },
     });
   } catch (error) {
@@ -147,6 +150,7 @@ router.get('/me', authenticateToken, async (req, res) => {
         email: true,
         name: true,
         phone: true,
+        role: true,
         createdAt: true,
         updatedAt: true,
         // Nu returnăm passwordHash

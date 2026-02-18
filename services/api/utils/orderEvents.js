@@ -8,11 +8,16 @@ const { EventEmitter } = require('events');
 const orderEvents = new EventEmitter();
 orderEvents.setMaxListeners(100);
 
-function emitOrderStatus(order) {
+/**
+ * @param {object} order - Comanda (cu items dacă e cazul)
+ * @param {{ reason?: string }} [opts] - reason: 'courier_refused' când curierul refuză (clientul primește notificare)
+ */
+function emitOrderStatus(order, opts = {}) {
   orderEvents.emit('order:status', {
     orderId: order.id,
     status: order.status,
     order,
+    reason: opts.reason,
   });
 }
 

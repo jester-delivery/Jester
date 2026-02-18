@@ -9,6 +9,7 @@ import Toast from "@/components/ui/Toast";
 import { api, type Order } from "@/lib/api";
 import { getOrderStatusClass, ORDER_STATUS_LABEL, PACKAGE_ORDER_STATUS_LABEL } from "@/lib/orderStatus";
 import { useAuthStore } from "@/stores/authStore";
+import { useAuthReady } from "@/hooks/useAuthReady";
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -22,6 +23,7 @@ function formatDate(iso: string) {
 }
 
 const STATUS_TOAST: Record<string, string> = {
+  ACCEPTED: "Comanda ta a fost acceptată!",
   CONFIRMED: "Comanda ta a fost acceptată!",
   PREPARING: "Comanda ta se pregătește.",
   ON_THE_WAY: "Comanda ta e în drum spre tine!",
@@ -69,6 +71,16 @@ function OrderCard({
     e.stopPropagation();
     setConfirmOpen(false);
   };
+
+  // Închide modal la Escape (accesibilitate)
+  useEffect(() => {
+    if (!confirmOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConfirmOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [confirmOpen]);
 
   return (
     <li className="rounded-2xl border border-white/20 bg-white/10 overflow-hidden transition hover:border-white/30 relative">
@@ -176,6 +188,7 @@ function OrdersPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const placedSuccess = searchParams.get("placed") === "1";
+  const authReady = useAuthReady();
   const { isAuthenticated, user } = useAuthStore();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,9 +206,9 @@ function OrdersPageContent() {
     }, 3500);
   }, []);
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await api.orders.getMy();
+      const res = await api.orders.getMy({ signal });
       const newOrders = res.data.orders ?? [];
       setOrders(newOrders);
       setError(null);
@@ -212,7 +225,8 @@ function OrdersPageContent() {
         }
       }
       prevOrdersRef.current = newOrders;
-    } catch {
+    } catch (err: unknown) {
+      if ((err as { name?: string })?.name === "AbortError") return;
       setError("Nu s-au putut încărca comenzile.");
     } finally {
       setLoading(false);
@@ -225,7 +239,10 @@ function OrdersPageContent() {
       showToast("Comandă ștearsă");
       try {
         await api.orders.delete(order.id);
-      } catch {
+      } catch (err: any) {
+        const status = err.response?.status;
+        // 400/404 = deja ștearsă sau invalidă – nu mai afișăm eroare, list-ul e deja actualizat
+        if (status === 400 || status === 404) return;
         showToast("Eroare la ștergere. Reîncarcăm lista.");
         fetchOrders();
       }
@@ -233,25 +250,30 @@ function OrdersPageContent() {
     [showToast, fetchOrders]
   );
 
-  // Redirect la login dacă nu e autentificat
+  // Redirect la login doar după rehidratare și doar dacă nu există token
   useEffect(() => {
+    if (!authReady) return;
     if (!isAuthenticated || !user) {
+      const token = typeof window !== "undefined" ? localStorage.getItem("jester_token") : null;
+      if (token) return;
       router.replace("/login?next=" + encodeURIComponent("/orders"));
     }
-  }, [isAuthenticated, user, router]);
+  }, [authReady, isAuthenticated, user, router]);
 
-  // Fetch inițial + polling la 7 sec
+  // Fetch inițial + polling; AbortController anulează request la unmount
   useEffect(() => {
     if (!isAuthenticated || !user) return;
+    const controller = new AbortController();
     let cancelled = false;
     const run = () => {
       if (cancelled) return;
-      fetchOrders();
+      fetchOrders(controller.signal);
     };
     run();
     const interval = setInterval(run, 12000);
     return () => {
       cancelled = true;
+      controller.abort();
       clearInterval(interval);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
@@ -267,6 +289,13 @@ function OrdersPageContent() {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [isAuthenticated, user, fetchOrders]);
 
+  if (!authReady || (!isAuthenticated && typeof window !== "undefined" && localStorage.getItem("jester_token"))) {
+    return (
+      <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24 flex items-center justify-center">
+        <p className="text-white/70">Se încarcă...</p>
+      </main>
+    );
+  }
   if (!isAuthenticated || !user) {
     return (
       <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24 flex items-center justify-center">

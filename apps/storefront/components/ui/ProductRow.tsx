@@ -11,6 +11,8 @@ type ProductRowProps = {
   /** Optional short description (e.g. for pizza page) */
   description?: string;
   restricted18?: boolean;
+  /** Din API: false = produsul apare dar nu poate fi adăugat (badge Indisponibil) */
+  isAvailable?: boolean;
   /** When provided, row is clickable and shows Add / stepper for global cart */
   id?: string;
   section?: string;
@@ -30,6 +32,7 @@ export default function ProductRow({
   image,
   description,
   restricted18,
+  isAvailable = true,
   id,
   section,
   showToast,
@@ -53,7 +56,7 @@ export default function ProductRow({
   const handleAdd = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!id || !section) return;
+    if (!id || !section || !isAvailable) return;
     addItem({ id, name, price, image, section });
     showToast?.("Produs adăugat în coș");
     const target = (e.target as HTMLElement).closest("button") ?? (e.currentTarget as HTMLElement);
@@ -78,7 +81,7 @@ export default function ProductRow({
   };
 
   const handleRowClick = (e?: React.MouseEvent) => {
-    if (!id || !section) return;
+    if (!id || !section || !isAvailable) return;
     if (!isInCart) {
       addItem({ id, name, price, image, section });
       showToast?.("Produs adăugat în coș");
@@ -90,7 +93,7 @@ export default function ProductRow({
     }
   };
 
-  const isCartEnabled = Boolean(id && section);
+  const isCartEnabled = Boolean(id && section && isAvailable);
 
   return (
     <div
@@ -107,8 +110,14 @@ export default function ProductRow({
             }
           : undefined
       }
-      className="group relative flex w-full cursor-pointer overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md transition-all duration-200 hover:border-white/30 hover:bg-white/15"
+      className={`group relative flex w-full overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md transition-all duration-200 ${isCartEnabled ? "cursor-pointer hover:border-white/30 hover:bg-white/15" : "cursor-default opacity-80"}`}
     >
+      {/* Indisponibil badge */}
+      {id && section && !isAvailable && (
+        <div className="absolute right-3 top-3 z-10 rounded-lg bg-red-500/90 px-2 py-1 text-[10px] font-bold text-white shadow-md">
+          Indisponibil
+        </div>
+      )}
       {/* +18 badge */}
       {restricted18 && (
         <div className="absolute right-3 top-3 z-10 rounded-lg bg-amber-500/95 px-2 py-1 text-[10px] font-bold text-black shadow-md">
@@ -141,13 +150,15 @@ export default function ProductRow({
         </p>
       </div>
 
-      {/* Add / Stepper (dreapta jos) - doar când id + section */}
-      {isCartEnabled && (
+      {/* Add / Stepper (dreapta jos) - doar când id + section + isAvailable */}
+      {id && section && (
         <div
           className="flex shrink-0 items-center gap-1 self-end pb-3 pr-3"
           onClick={(e) => e.stopPropagation()}
         >
-          {!isInCart ? (
+          {!isAvailable ? (
+            <span className="text-xs text-white/50">Nu se poate adăuga</span>
+          ) : !isInCart ? (
             <button
               type="button"
               onClick={handleAdd}

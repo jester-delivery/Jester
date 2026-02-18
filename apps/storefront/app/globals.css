@@ -86,39 +86,30 @@ body {
   animation: fly-shadow 0.35s ease-in forwards;
 }
 
-/* Bubbles: subtle floating (GPU-friendly, transform only) */
+/* Bubbles: doar mișcare verticală (fără stânga/dreapta) – evită „migrarea” la deschidere */
 @keyframes bubble-float {
   0%,
   100% {
-    transform: translate(-50%, -50%) translate(0, 0);
-  }
-  25% {
-    transform: translate(-50%, -50%) translate(2px, -3px);
+    transform: translate(-50%, -50%) translateY(0);
   }
   50% {
-    transform: translate(-50%, -50%) translate(-1px, 2px);
-  }
-  75% {
-    transform: translate(-50%, -50%) translate(3px, 1px);
+    transform: translate(-50%, -50%) translateY(-6px);
   }
 }
 @keyframes bubble-float-alt {
   0%,
   100% {
-    transform: translate(-50%, -50%) translate(0, 0);
+    transform: translate(-50%, -50%) translateY(0);
   }
-  33% {
-    transform: translate(-50%, -50%) translate(-2px, 2px);
-  }
-  66% {
-    transform: translate(-50%, -50%) translate(1px, -2px);
+  50% {
+    transform: translate(-50%, -50%) translateY(5px);
   }
 }
 .animate-bubble-float {
-  animation: bubble-float 8s ease-in-out infinite;
+  animation: bubble-float 4s ease-in-out infinite;
   will-change: transform;
 }
 .animate-bubble-float-alt {
-  animation: bubble-float-alt 10s ease-in-out infinite;
+  animation: bubble-float-alt 5s ease-in-out infinite;
   will-change: transform;
 }

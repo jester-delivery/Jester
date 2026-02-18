@@ -38,7 +38,25 @@ export type Order = {
   name?: string;
   notes?: string;
   createdAt: string;
+  assignedCourierId?: string | null;
+  courierAcceptedAt?: string | null;
   items: OrderItem[];
+};
+
+export type AdminProduct = {
+  id: string;
+  name: string;
+  description?: string | null;
+  price: string;
+  image?: string | null;
+  isActive: boolean;
+  available: boolean;
+  categoryId: string;
+  restaurantId: string;
+  sortOrder?: number | null;
+  stock?: number | null;
+  category?: { id: string; name: string; slug: string };
+  restaurant?: { id: string; name: string };
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -46,6 +64,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 // Creează instanță axios
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 20000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -67,17 +86,24 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Interceptor pentru gestionare erori
+// Interceptor: doar 401 = neautentificat → logout + redirect. 403 = interzis (ex. nu e curier) → nu delogăm.
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Token invalid sau expirat → redirect cu ?next= pentru revenire după login
+    const status = error.response?.status;
+    if (status === 401) {
+      const requestUrl = error.config?.url ?? '';
+      const isAuthLoginOrRegister =
+        requestUrl === '/auth/login' || requestUrl === '/auth/register';
+      if (isAuthLoginOrRegister) {
+        return Promise.reject(error);
+      }
       if (typeof window !== 'undefined') {
+        const path = window.location.pathname + window.location.search;
+        const safeNext = path.startsWith('/login') ? '/' : path;
         localStorage.removeItem('jester_token');
         localStorage.removeItem('jester_user');
-        const next = encodeURIComponent(window.location.pathname + window.location.search);
-        window.location.href = `/login?next=${next}`;
+        window.location.href = `/login?next=${encodeURIComponent(safeNext)}`;
       }
     }
     return Promise.reject(error);
@@ -116,9 +142,10 @@ export const api = {
     getById: (id: string) => apiClient.get(`/products/${id}`),
   },
   
-  // Categories
+  // Categories (includeProducts=1 pentru catalog cu produse active + isAvailable)
   categories: {
-    getAll: () => apiClient.get('/categories'),
+    getAll: (params?: { includeProducts?: "1" }) =>
+      apiClient.get<{ categories: Array<{ id: string; name: string; slug: string; products?: Array<{ id: string; name: string; price: string; image?: string | null; isAvailable: boolean; categoryId: string }> }> }>('/categories', { params }),
     getById: (id: string) => apiClient.get(`/categories/${id}`),
   },
   
@@ -130,8 +157,11 @@ export const api = {
   
   // Orders (comenzi user, auth obligatoriu)
   orders: {
-    getMy: (params?: { includeDeleted?: '1' }) =>
-      apiClient.get<{ orders: Order[] }>('/orders/my', { params }),
+    getMy: (params?: { includeDeleted?: '1'; signal?: AbortSignal }) =>
+      apiClient.get<{ orders: Order[] }>('/orders/my', {
+        params: params?.includeDeleted ? { includeDeleted: params.includeDeleted } : undefined,
+        signal: params?.signal,
+      }),
     getById: (id: string) => apiClient.get<{ order: Order }>(`/orders/${id}`),
     updateStatus: (id: string, data: { status?: string; estimatedDeliveryMinutes?: number; internalNotes?: string }) =>
       apiClient.patch<{ order: Order }>(`/orders/${id}/status`, data),
@@ -141,6 +171,24 @@ export const api = {
   // Admin (protejat: auth + ADMIN_EMAILS în .env)
   admin: {
     getOrders: () => apiClient.get<{ orders: Order[] }>('/admin/orders'),
+    getProducts: (params?: { category?: string }) =>
+      apiClient.get<{ products: AdminProduct[] }>('/admin/products', { params }),
+    updateProduct: (id: string, data: {
+      name?: string;
+      description?: string | null;
+      price?: number;
+      image?: string | null;
+      categorySlug?: string;
+      isActive?: boolean;
+      available?: boolean;
+      sortOrder?: number | null;
+      stock?: number | null;
+    }) =>
+      apiClient.patch<{ product: AdminProduct }>(`/admin/products/${id}`, data),
+    bulkActivate: (categoryId?: string) =>
+      apiClient.post<{ success: boolean; count: number }>('/admin/products/bulk-activate', categoryId != null ? { categoryId } : {}),
+    bulkDeactivate: (categoryId?: string) =>
+      apiClient.post<{ success: boolean; count: number }>('/admin/products/bulk-deactivate', categoryId != null ? { categoryId } : {}),
   },
 
   // Addresses – autocomplete Sulina + validare (public)
@@ -151,18 +199,38 @@ export const api = {
       apiClient.get<{ valid: boolean }>('/addresses/validate', { params: { address: address || '' } }),
   },
 
+  // Courier dashboard (auth + rol COURIER/ADMIN)
+  courier: {
+    getAvailable: () => apiClient.get<{ orders: Order[] }>('/courier/orders/available'),
+    getMine: () => apiClient.get<{ orders: Order[] }>('/courier/orders/mine'),
+    getHistory: () => apiClient.get<{ orders: Order[] }>('/courier/orders/history'),
+    getRefused: () => apiClient.get<{ orders: (Order & { rejectedAt?: string; refusedReason?: string | null; statusDisplay?: string })[] }>('/courier/orders/refused'),
+    getOrder: (id: string) => apiClient.get<{ order: Order }>(`/courier/orders/${id}`),
+    accept: (id: string) => apiClient.post<{ order: Order }>(`/courier/orders/${id}/accept`),
+    refuse: (id: string, reason?: string) =>
+      apiClient.post<{ success: boolean }>(`/courier/orders/${id}/refuse`, reason != null ? { reason } : {}),
+    setStatus: (id: string, status: 'ON_THE_WAY' | 'DELIVERED') =>
+      apiClient.post<{ order: Order }>(`/courier/orders/${id}/status`, { status }),
+  },
+
   // Cart orders: Checkout + status (admin)
   cartOrders: {
-    create: (data: {
-      orderType?: 'product_order' | 'package_delivery';
-      total: number;
-      items: Array<{ name: string; price: number; quantity: number }>;
-      deliveryAddress: string;
-      phone: string;
-      name: string;
-      notes?: string;
-      paymentMethod?: 'CASH_ON_DELIVERY' | 'CARD' | 'cash';
-    }) => apiClient.post<{ success: boolean; orderId: string }>('/cart-orders', data),
+    create: (
+      data: {
+        orderType?: 'product_order' | 'package_delivery';
+        total: number;
+        items: Array<{ name: string; price: number; quantity: number; productId?: string }>;
+        deliveryAddress: string;
+        phone: string;
+        name: string;
+        notes?: string;
+        paymentMethod?: 'CASH_ON_DELIVERY' | 'CARD' | 'cash';
+      },
+      options?: { idempotencyKey?: string }
+    ) =>
+      apiClient.post<{ success: boolean; orderId: string }>('/cart-orders', data, {
+        headers: options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : undefined,
+      }),
     getAll: () => apiClient.get<{ orders: Order[] }>('/cart-orders'),
     updateStatus: (id: string, data: { status?: string; estimatedDeliveryMinutes?: number; internalNotes?: string }) =>
       apiClient.patch<{ order: Order }>(`/cart-orders/${id}/status`, data),

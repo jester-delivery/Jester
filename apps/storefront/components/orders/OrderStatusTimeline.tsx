@@ -1,9 +1,9 @@
 "use client";
 
-// Flow food: PENDING → CONFIRMED → PREPARING → ON_THE_WAY → DELIVERED
+// Flow food: PENDING → Acceptată (ACCEPTED/CONFIRMED) → Se pregătește → În drum → Livrată
 const STEPS_FOOD: { status: string; label: string }[] = [
   { status: "PENDING", label: "Plasată" },
-  { status: "CONFIRMED", label: "Acceptată" },
+  { status: "ACCEPTED", label: "Acceptată" },
   { status: "PREPARING", label: "Se pregătește" },
   { status: "ON_THE_WAY", label: "În drum" },
   { status: "DELIVERED", label: "Livrată" },
@@ -18,7 +18,9 @@ const STEPS_PACKAGE: { status: string; label: string }[] = [
 ];
 
 function stepIndexFood(status: string): number {
+  if (status === "DELIVERED") return 4;
   if (status === "OUT_FOR_DELIVERY" || status === "ON_THE_WAY") return 3;
+  if (status === "ACCEPTED" || status === "CONFIRMED") return 1;
   const i = STEPS_FOOD.findIndex((s) => s.status === status);
   return i >= 0 ? i : -1;
 }

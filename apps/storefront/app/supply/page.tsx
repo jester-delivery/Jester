@@ -8,15 +8,17 @@ import Toast from "@/components/ui/Toast";
 import CartDrawer from "@/components/jester24/CartDrawer";
 import CartHeaderButton from "@/components/jester24/CartHeaderButton";
 import Jester24BottomBarSwitcher from "@/components/jester24/Jester24BottomBarSwitcher";
-import { SUPPLY_PRODUCTS } from "@/lib/data/supply-products";
+import { useCategory } from "@/lib/useCategory";
 import { useJester24CartStore } from "@/stores/jester24CartStore";
 
 const SUPPLY_HEADER_IMAGE = "https://i.imgur.com/W5X0s4C.jpeg";
 const TOAST_DURATION_MS = 2500;
 const SECTION_SUPPLY = "supply";
+const DEFAULT_IMAGE = "https://i.imgur.com/W5X0s4C.jpeg";
 
 export default function SupplyPage() {
   const router = useRouter();
+  const { products, loading, error } = useCategory("supply");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,7 +46,6 @@ export default function SupplyPage() {
 
   return (
     <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24">
-      {/* Header card: titlu + imagine – identic Pizza */}
       <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-[#050610]/90 backdrop-blur-md safe-area-inset-top">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 pt-4 pb-4">
           <div className="min-w-0 flex-1">
@@ -70,22 +71,29 @@ export default function SupplyPage() {
         </div>
       </header>
 
-      {/* Listă produse – același pattern ca Pizza, coș global */}
       <div className="mx-auto max-w-4xl px-4 py-6">
-        <div className="flex flex-col gap-3">
-          {SUPPLY_PRODUCTS.map((product) => (
-            <ProductRow
-              key={product.id}
-              id={product.id}
-              section={SECTION_SUPPLY}
-              name={product.name}
-              description={product.description}
-              price={product.price}
-              image={product.image}
-              showToast={showToast}
-            />
-          ))}
-        </div>
+        {loading && <p className="text-white/70">Se încarcă produsele...</p>}
+        {error && <p className="text-red-300">{error}</p>}
+        {!loading && !error && products.length === 0 && (
+          <p className="text-white/70">Niciun produs momentan.</p>
+        )}
+        {!loading && !error && products.length > 0 && (
+          <div className="flex flex-col gap-3">
+            {products.map((product) => (
+              <ProductRow
+                key={product.id}
+                id={product.id}
+                section={SECTION_SUPPLY}
+                name={product.name}
+                description={product.description ?? undefined}
+                price={Number(product.price)}
+                image={product.image ?? DEFAULT_IMAGE}
+                isAvailable={product.isAvailable}
+                showToast={showToast}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <CartDrawer

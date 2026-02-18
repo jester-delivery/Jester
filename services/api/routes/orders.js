@@ -70,14 +70,25 @@ router.get('/stream/:orderId', authenticateToken, async (req, res) => {
     const handler = (payload) => {
       if (payload.orderId === orderId) {
         res.write(`event: status_changed\n`);
-        res.write(`data: ${JSON.stringify({ status: payload.status, order: payload.order })}\n\n`);
+        res.write(`data: ${JSON.stringify({ status: payload.status, order: payload.order, reason: payload.reason })}\n\n`);
         res.flush?.();
       }
     };
 
     orderEvents.on('order:status', handler);
 
+    const heartbeatMs = 25000;
+    const heartbeatInterval = setInterval(() => {
+      try {
+        res.write(': heartbeat\n\n');
+        if (res.flush) res.flush();
+      } catch (_) {
+        clearInterval(heartbeatInterval);
+      }
+    }, heartbeatMs);
+
     req.on('close', () => {
+      clearInterval(heartbeatInterval);
       orderEvents.off('order:status', handler);
     });
   } catch (error) {
@@ -242,6 +253,8 @@ router.patch('/:id/status', authenticateToken, requireAdmin, validate(updateOrde
     });
 
     if (status != null) {
+      const { logOrderStatusChange } = require('../utils/orderStatusLog');
+      await logOrderStatusChange(id, order.status, data.status, req.userId || null);
       emitOrderStatus(updatedOrder);
     }
 

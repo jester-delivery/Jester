@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../utils/prisma');
 const authenticateToken = require('../middleware/authenticateToken');
 const requireAdmin = require('../middleware/requireAdmin');
+const { validate, updateProductSchema } = require('../utils/validation');
 
 const router = express.Router();
 
@@ -25,6 +26,195 @@ router.get('/orders', async (req, res) => {
     res.status(500).json({
       error: 'Eroare la obținerea comenzilor',
       code: 'FETCH_ADMIN_ORDERS_ERROR',
+    });
+  }
+});
+
+/**
+ * GET /admin/products
+ * Lista tuturor produselor (inclusiv inactive) – pentru cockpit Admin
+ */
+router.get('/products', async (req, res) => {
+  try {
+    const { category: categorySlugOrId } = req.query;
+    const where = {};
+    if (categorySlugOrId) {
+      const cat = await prisma.category.findFirst({
+        where: {
+          OR: [{ id: categorySlugOrId }, { slug: categorySlugOrId }],
+        },
+      });
+      if (cat) where.categoryId = cat.id;
+    }
+
+    const products = await prisma.product.findMany({
+      where,
+      include: {
+        category: {
+          select: { id: true, name: true, slug: true },
+        },
+        restaurant: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: [
+        { categoryId: 'asc' },
+        { sortOrder: 'asc' },
+        { createdAt: 'desc' },
+      ],
+    });
+    res.json({ products });
+  } catch (error) {
+    console.error('Error fetching admin products:', error);
+    res.status(500).json({
+      error: 'Eroare la obținerea produselor',
+      code: 'FETCH_ADMIN_PRODUCTS_ERROR',
+    });
+  }
+});
+
+/**
+ * PATCH /admin/products/:id
+ * CRUD complet: name, description, price, image, categorySlug, isActive, available, sortOrder, stock
+ */
+router.patch('/products/:id', validate(updateProductSchema), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, price, image, categorySlug, isActive, available, sortOrder, stock } = req.body;
+
+    const product = await prisma.product.findUnique({ where: { id } });
+    if (!product) {
+      return res.status(404).json({
+        error: 'Produs negăsit',
+        code: 'PRODUCT_NOT_FOUND',
+      });
+    }
+
+    const data = {};
+    if (name !== undefined) data.name = name;
+    if (description !== undefined) data.description = description;
+    if (price !== undefined) data.price = price;
+    if (image !== undefined) data.image = image;
+    if (isActive !== undefined) data.isActive = isActive;
+    if (available !== undefined) data.available = available;
+    if (sortOrder !== undefined) data.sortOrder = sortOrder;
+    if (stock !== undefined) data.stock = stock;
+
+    if (categorySlug !== undefined) {
+      const cat = await prisma.category.findFirst({
+        where: { OR: [{ slug: categorySlug }, { id: categorySlug }] },
+      });
+      if (!cat) {
+        return res.status(400).json({
+          error: 'Categorie negăsită pentru slug: ' + categorySlug,
+          code: 'CATEGORY_NOT_FOUND',
+        });
+      }
+      data.categoryId = cat.id;
+    }
+
+    const updated = await prisma.product.update({
+      where: { id },
+      data,
+      include: {
+        category: { select: { id: true, name: true, slug: true } },
+        restaurant: { select: { id: true, name: true } },
+      },
+    });
+    res.json({ product: updated });
+  } catch (error) {
+    console.error('Error updating product:', error);
+    res.status(500).json({
+      error: 'Eroare la actualizarea produsului',
+      code: 'UPDATE_PRODUCT_ERROR',
+    });
+  }
+});
+
+/**
+ * POST /admin/products/bulk-activate
+ * Body: { categoryId?: string } – activează toate produsele (opțional doar din categorie)
+ */
+router.post('/products/bulk-activate', async (req, res) => {
+  try {
+    const { categoryId } = req.body || {};
+    const where = categoryId ? { categoryId } : {};
+    const result = await prisma.product.updateMany({
+      where,
+      data: { isActive: true },
+    });
+    res.json({ success: true, count: result.count });
+  } catch (error) {
+    console.error('Error bulk activate:', error);
+    res.status(500).json({
+      error: 'Eroare la activare în masă',
+      code: 'BULK_ACTIVATE_ERROR',
+    });
+  }
+});
+
+/**
+ * POST /admin/products/bulk-deactivate
+ * Body: { categoryId?: string } – dezactivează toate produsele (opțional doar din categorie)
+ */
+router.post('/products/bulk-deactivate', async (req, res) => {
+  try {
+    const { categoryId } = req.body || {};
+    const where = categoryId ? { categoryId } : {};
+    const result = await prisma.product.updateMany({
+      where,
+      data: { isActive: false },
+    });
+    res.json({ success: true, count: result.count });
+  } catch (error) {
+    console.error('Error bulk deactivate:', error);
+    res.status(500).json({
+      error: 'Eroare la dezactivare în masă',
+      code: 'BULK_DEACTIVATE_ERROR',
+    });
+  }
+});
+
+/**
+ * GET /admin/stats/today
+ * Agregare: total comenzi azi, total livrate azi, total valoare livrată azi
+ */
+router.get('/stats/today', async (req, res) => {
+  try {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    const [totalOrdersToday, deliveredToday] = await Promise.all([
+      prisma.cartOrder.count({
+        where: {
+          createdAt: { gte: startOfToday, lte: endOfToday },
+          deletedAt: null,
+        },
+      }),
+      prisma.cartOrder.findMany({
+        where: {
+          status: 'DELIVERED',
+          updatedAt: { gte: startOfToday, lte: endOfToday },
+          deletedAt: null,
+        },
+        select: { total: true },
+      }),
+    ]);
+
+    const totalDeliveredToday = deliveredToday.length;
+    const totalValueDeliveredToday = deliveredToday.reduce((sum, o) => sum + Number(o.total), 0);
+
+    res.json({
+      totalOrdersToday,
+      totalDeliveredToday,
+      totalValueDeliveredToday: Math.round(totalValueDeliveredToday * 100) / 100,
+    });
+  } catch (error) {
+    console.error('Error admin stats/today:', error);
+    res.status(500).json({
+      error: 'Eroare la statistici',
+      code: 'ADMIN_STATS_ERROR',
     });
   }
 });

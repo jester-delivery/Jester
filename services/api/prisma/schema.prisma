@@ -6,12 +6,19 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserRole {
+  USER
+  ADMIN
+  COURIER
+}
+
 model User {
   id           String      @id @default(uuid())
   email        String      @unique
   passwordHash String      @map("password_hash")
   name         String
   phone        String?
+  role         UserRole    @default(USER)
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
   orders       Order[]
@@ -70,9 +77,14 @@ model Product {
   description  String?
   price        Decimal     @db.Decimal(10, 2)
   image        String?
+  /** ON/OFF din Admin: false = produsul dispare complet de la client */
+  isActive     Boolean     @default(true) @map("is_active")
+  /** Disponibil acum: false = apare la client dar nu poate fi adăugat (badge Indisponibil) */
   available    Boolean     @default(true)
   categoryId   String      @map("category_id")
   restaurantId String      @map("restaurant_id")
+  sortOrder    Int?        @map("sort_order")
+  stock        Int?        @map("stock")
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
   orderItems   OrderItem[]
@@ -110,24 +122,54 @@ model OrderItem {
 }
 
 model CartOrder {
-  id                        String          @id @default(uuid())
-  userId                    String?         @map("user_id")
-  orderType                 String          @default("product_order") @map("order_type") // "product_order" | "package_delivery"
-  status                    OrderStatus     @default(PENDING)
-  total                     Decimal         @db.Decimal(10, 2)
-  createdAt                 DateTime        @default(now()) @map("created_at")
-  deletedAt                 DateTime?       @map("deleted_at") // soft delete – doar PENDING poate fi șters
-  paymentMethod             String          @default("CASH_ON_DELIVERY") @map("payment_method")
-  deliveryAddress           String?         @map("delivery_address")
+  id                        String            @id @default(uuid())
+  userId                    String?           @map("user_id")
+  idempotencyKey            String?           @map("idempotency_key")
+  orderType                 String            @default("product_order") @map("order_type") // "product_order" | "package_delivery"
+  status                    OrderStatus       @default(PENDING)
+  total                     Decimal           @db.Decimal(10, 2)
+  createdAt                 DateTime          @default(now()) @map("created_at")
+  deletedAt                 DateTime?         @map("deleted_at") // soft delete – doar PENDING poate fi șters
+  paymentMethod             String            @default("CASH_ON_DELIVERY") @map("payment_method")
+  deliveryAddress           String?           @map("delivery_address")
   phone                     String?
   name                      String?
   notes                     String?
-  estimatedDeliveryMinutes  Int?            @map("estimated_delivery_minutes")
-  internalNotes             String?         @map("internal_notes")
+  estimatedDeliveryMinutes  Int?              @map("estimated_delivery_minutes")
+  internalNotes             String?           @map("internal_notes")
+  assignedCourierId         String?           @map("assigned_courier_id")
+  courierAcceptedAt         DateTime?        @map("courier_accepted_at")
   items                     CartOrderItem[]
-  user                      User?           @relation(fields: [userId], references: [id])
+  user                      User?             @relation(fields: [userId], references: [id])
+  courierRejections         CourierRejection[]
+  statusLogs                OrderStatusLog[]
 
+  @@unique([userId, idempotencyKey])
   @@map("cart_orders")
+}
+
+model OrderStatusLog {
+  id               String   @id @default(uuid())
+  orderId          String   @map("order_id")
+  previousStatus  String   @map("previous_status")
+  newStatus       String   @map("new_status")
+  changedByUserId String?  @map("changed_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  order            CartOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_status_logs")
+}
+
+model CourierRejection {
+  id         String    @id @default(uuid())
+  orderId    String    @map("order_id")
+  courierId  String    @map("courier_id")
+  rejectedAt DateTime  @default(now()) @map("rejected_at")
+  reason     String?   @map("reason")
+  order      CartOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, courierId])
+  @@map("courier_rejections")
 }
 
 model CartOrderItem {
@@ -143,6 +185,7 @@ model CartOrderItem {
 
 enum OrderStatus {
   PENDING
+  ACCEPTED
   CONFIRMED
   PREPARING
   READY

@@ -8,15 +8,17 @@ import Toast from "@/components/ui/Toast";
 import CartDrawer from "@/components/jester24/CartDrawer";
 import CartHeaderButton from "@/components/jester24/CartHeaderButton";
 import Jester24BottomBarSwitcher from "@/components/jester24/Jester24BottomBarSwitcher";
-import { ANTIQ_PRODUCTS } from "@/lib/data/antiq-products";
+import { useCategory } from "@/lib/useCategory";
 import { useJester24CartStore } from "@/stores/jester24CartStore";
 
 const ANTIQ_HEADER_IMAGE = "https://i.imgur.com/W5X0s4C.jpeg";
 const TOAST_DURATION_MS = 2500;
 const SECTION_ANTIQ = "antiq";
+const DEFAULT_IMAGE = "https://i.imgur.com/W5X0s4C.jpeg";
 
 export default function AntiqPage() {
   const router = useRouter();
+  const { products, loading, error } = useCategory("antiq");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,7 +46,6 @@ export default function AntiqPage() {
 
   return (
     <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24">
-      {/* Header: titlu ANTIQ + subtitlu + imagine + coș */}
       <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-[#050610]/90 backdrop-blur-md safe-area-inset-top">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 pt-4 pb-4">
           <div className="min-w-0 flex-1">
@@ -72,22 +73,29 @@ export default function AntiqPage() {
         </div>
       </header>
 
-      {/* Grid produse: 1 col mobil, 2 tabletă, 3 desktop – același coș global */}
       <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {ANTIQ_PRODUCTS.map((product) => (
-            <ProductRow
-              key={product.id}
-              id={product.id}
-              section={SECTION_ANTIQ}
-              name={product.name}
-              description={product.description}
-              price={product.price}
-              image={product.image}
-              showToast={showToast}
-            />
-          ))}
-        </div>
+        {loading && <p className="text-white/70">Se încarcă produsele...</p>}
+        {error && <p className="text-red-300">{error}</p>}
+        {!loading && !error && products.length === 0 && (
+          <p className="text-white/70">Niciun produs momentan.</p>
+        )}
+        {!loading && !error && products.length > 0 && (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {products.map((product) => (
+              <ProductRow
+                key={product.id}
+                id={product.id}
+                section={SECTION_ANTIQ}
+                name={product.name}
+                description={product.description ?? undefined}
+                price={Number(product.price)}
+                image={product.image ?? DEFAULT_IMAGE}
+                isAvailable={product.isAvailable}
+                showToast={showToast}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <CartDrawer

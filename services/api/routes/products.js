@@ -60,7 +60,10 @@ router.get('/', async (req, res) => {
       where.restaurantId = restaurant;
     }
 
-    // Filtrare după disponibilitate
+    // Client: doar produse active (vizibile în magazin)
+    where.isActive = true;
+
+    // Filtrare opțională după disponibilitate (pentru admin sau filtre)
     if (available !== undefined) {
       where.available = available === 'true';
     }
@@ -86,17 +89,24 @@ router.get('/', async (req, res) => {
         },
         skip,
         take: limitNum,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: [
+          { sortOrder: 'asc' },
+          { createdAt: 'desc' },
+        ],
       }),
       prisma.product.count({ where }),
     ]);
 
     const totalPages = Math.ceil(total / limitNum);
 
+    // Client: expune available ca isAvailable (clar pentru UI)
+    const productsWithFlags = products.map((p) => ({
+      ...p,
+      isAvailable: p.available,
+    }));
+
     res.json({
-      products,
+      products: productsWithFlags,
       total,
       page: pageNum,
       limit: limitNum,
@@ -113,14 +123,14 @@ router.get('/', async (req, res) => {
 
 /**
  * GET /products/:id
- * Returnează detaliile unui produs specific
+ * Returnează detaliile unui produs specific (doar dacă e active)
  */
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const product = await prisma.product.findUnique({
-      where: { id },
+    const product = await prisma.product.findFirst({
+      where: { id, isActive: true },
       include: {
         category: {
           select: {
@@ -150,7 +160,12 @@ router.get('/:id', async (req, res) => {
       });
     }
 
-    res.json({ product });
+    res.json({
+      product: {
+        ...product,
+        isAvailable: product.available,
+      },
+    });
   } catch (error) {
     console.error('Error fetching product:', error);
     res.status(500).json({

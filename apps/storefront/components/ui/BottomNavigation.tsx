@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { useState, useEffect, useRef } from "react";
-import { Home, UtensilsCrossed, Truck, Receipt, User } from "lucide-react";
+import { Home, UtensilsCrossed, Truck, Receipt, User, Package } from "lucide-react";
 
 const NAV_HEIGHT = 64;
 
@@ -61,7 +61,12 @@ export default function BottomNavigation({
   hideOnScrollDown = false,
 }: BottomNavigationProps = {}) {
   const pathname = usePathname();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
+  const showCourier = user?.role === "COURIER" || user?.role === "ADMIN";
+  const items = [
+    ...navItems,
+    ...(showCourier ? [{ label: "Curier", href: "/courier", icon: Package }] : []),
+  ];
   const [visible, setVisible] = useState(true);
   const lastScrollY = useRef(0);
   const ticking = useRef(false);
@@ -104,14 +109,15 @@ export default function BottomNavigation({
           className="mx-auto flex max-w-lg items-stretch justify-around px-2"
           style={{ height: NAV_HEIGHT }}
         >
-          {navItems.map((item) => {
+          {items.map((item) => {
             const href = item.resolveHref ? item.resolveHref(isAuthenticated) : item.href;
             const label = item.resolveLabel ? item.resolveLabel(isAuthenticated) : item.label;
             const isMenuActive =
               item.href === "/jester-24-24" &&
               pathname !== "/jester-24-24/checkout" &&
               MENU_PATH_PREFIXES.some((p) => pathname === p || (pathname?.startsWith(p + "/") ?? false));
-            const isActive = pathname === href || isMenuActive;
+            const isCourierActive = item.href === "/courier" && (pathname === "/courier" || (pathname?.startsWith?.("/courier/") ?? false));
+            const isActive = pathname === href || isMenuActive || isCourierActive;
 
             const Icon = item.icon;
             return (

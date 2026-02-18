@@ -5,22 +5,40 @@ const router = express.Router();
 
 /**
  * GET /categories
- * Returnează lista tuturor categoriilor
+ * Returnează lista categoriilor. ?includeProducts=1 = include produse active (pentru catalog client)
  */
 router.get('/', async (req, res) => {
   try {
+    const includeProducts = req.query.includeProducts === '1';
+
     const categories = await prisma.category.findMany({
-      orderBy: {
-        name: 'asc',
-      },
-      include: {
-        _count: {
-          select: {
-            products: true,
+      orderBy: { name: 'asc' },
+      include: includeProducts
+        ? {
+            products: {
+              where: { isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+              include: {
+                restaurant: { select: { id: true, name: true } },
+              },
+            },
+            _count: { select: { products: true } },
+          }
+        : {
+            _count: { select: { products: true } },
           },
-        },
-      },
     });
+
+    if (includeProducts) {
+      const categoriesWithFlags = categories.map((cat) => ({
+        ...cat,
+        products: (cat.products || []).map((p) => ({
+          ...p,
+          isAvailable: p.available,
+        })),
+      }));
+      return res.json({ categories: categoriesWithFlags });
+    }
 
     res.json({ categories });
   } catch (error) {
@@ -50,7 +68,7 @@ router.get('/:identifier', async (req, res) => {
       include: {
         products: {
           where: {
-            available: true,
+            isActive: true,
           },
           include: {
             restaurant: {
@@ -60,7 +78,11 @@ router.get('/:identifier', async (req, res) => {
               },
             },
           },
-          take: 10, // Limitează la 10 produse pentru preview
+          orderBy: [
+            { sortOrder: 'asc' },
+            { createdAt: 'desc' },
+          ],
+          take: 50,
         },
         _count: {
           select: {
@@ -77,7 +99,15 @@ router.get('/:identifier', async (req, res) => {
       });
     }
 
-    res.json({ category });
+    const categoryWithFlags = {
+      ...category,
+      products: (category.products || []).map((p) => ({
+        ...p,
+        isAvailable: p.available,
+      })),
+    };
+
+    res.json({ category: categoryWithFlags });
   } catch (error) {
     console.error('Error fetching category:', error);
     res.status(500).json({

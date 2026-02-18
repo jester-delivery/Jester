@@ -6,11 +6,13 @@ import { useParams, useRouter } from "next/navigation";
 import BottomNavigation from "@/components/ui/BottomNavigation";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
+import { useAuthReady } from "@/hooks/useAuthReady";
 
 export default function EditAddressPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string | undefined;
+  const authReady = useAuthReady();
   const { isAuthenticated, user } = useAuthStore();
   const [label, setLabel] = useState<"Home" | "Work" | "Other">("Home");
   const [street, setStreet] = useState("");
@@ -65,8 +67,23 @@ export default function EditAddressPage() {
     }
   };
 
+  useEffect(() => {
+    if (!authReady) return;
+    if (!isAuthenticated || !user) {
+      const token = typeof window !== "undefined" ? localStorage.getItem("jester_token") : null;
+      if (token) return;
+      router.replace("/login?next=" + encodeURIComponent("/addresses/" + id + "/edit"));
+    }
+  }, [authReady, isAuthenticated, user, id, router]);
+
+  if (!authReady || (!isAuthenticated && typeof window !== "undefined" && localStorage.getItem("jester_token"))) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] text-white">
+        <p className="text-white/70">Se încarcă...</p>
+      </main>
+    );
+  }
   if (!isAuthenticated || !user) {
-    router.replace("/login?next=" + encodeURIComponent("/addresses/" + id + "/edit"));
     return null;
   }
 

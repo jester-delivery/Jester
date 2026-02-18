@@ -48,16 +48,31 @@ router.get('/', async (req, res) => {
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 router.post('/', cartOrderCreateLimiter, authenticateToken, validate(createMvpOrderSchema), async (req, res) => {
-  const userId = req.userId;
-  const { orderType, items, total, paymentMethod, deliveryAddress, phone, name, notes } = req.body;
-
   try {
+    const userId = req.userId;
+    const rawKey = req.headers['idempotency-key'];
+    const idempotencyKey = (rawKey != null && String(rawKey).trim() !== '') ? String(rawKey).trim().slice(0, 128) : null;
+    const body = req.body || {};
+    const { orderType, items, total, paymentMethod, deliveryAddress, phone, name, notes } = body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Comanda trebuie să conțină cel puțin un produs', code: 'VALIDATION_ERROR' });
+    }
     if (!userId) {
       return res.status(401).json({ error: 'Autentificare necesară', code: 'USER_ID_MISSING' });
     }
     const isUuid = typeof userId === 'string' && UUID_REGEX.test(userId);
     if (!isUuid) {
       return res.status(400).json({ error: 'ID utilizator invalid', code: 'INVALID_USER_ID' });
+    }
+
+    if (idempotencyKey && userId) {
+      const existing = await prisma.cartOrder.findFirst({
+        where: { userId, idempotencyKey, deletedAt: null },
+        select: { id: true },
+      });
+      if (existing) {
+        return res.status(201).json({ success: true, orderId: existing.id });
+      }
     }
 
     const user = await prisma.user.findUnique({
@@ -69,27 +84,54 @@ router.post('/', cartOrderCreateLimiter, authenticateToken, validate(createMvpOr
     }
 
     const type = orderType === 'package_delivery' ? 'package_delivery' : 'product_order';
-    const itemsData = items.map((item) => ({
-      name: String(item.name ?? '').trim().slice(0, 200),
-      price: Number(item.price),
-      quantity: Math.max(1, Math.min(99, Math.floor(Number(item.quantity) || 1))),
-    }));
+    const quantities = items.map((it) => Math.max(1, Math.min(99, Math.floor(Number(it.quantity) || 1))));
+    const names = items.map((it) => String(it.name ?? '').trim().slice(0, 200));
+    const productIds = items.map((it) => it.productId || null);
 
-    const subtotal = itemsData.reduce((sum, it) => sum + it.price * it.quantity, 0);
-    let expectedTotal;
-    if (type === 'product_order') {
-      expectedTotal = subtotal + PRODUCT_DELIVERY_FEE;
-    } else {
-      expectedTotal = PACKAGE_DELIVERY_FEE;
-    }
-    const totalNum = Number(total);
-    if (Math.abs(totalNum - expectedTotal) > 0.01) {
-      return res.status(400).json({
-        error: type === 'product_order'
-          ? `Total invalid. Așteptat: subtotal (${subtotal.toFixed(2)}) + livrare (${PRODUCT_DELIVERY_FEE} lei).`
-          : `Total invalid. Tarif transport pachet: ${PACKAGE_DELIVERY_FEE} lei.`,
-        code: 'INVALID_TOTAL',
+    let backendTotal;
+    const itemsData = [];
+
+    if (type === 'package_delivery') {
+      backendTotal = PACKAGE_DELIVERY_FEE;
+      itemsData.push({
+        name: names[0] || 'Livrare pachet',
+        price: PACKAGE_DELIVERY_FEE,
+        quantity: quantities[0] || 1,
       });
+    } else {
+      let subtotal = 0;
+      for (let i = 0; i < items.length; i++) {
+        let product = null;
+        if (productIds[i] && UUID_REGEX.test(productIds[i])) {
+          product = await prisma.product.findFirst({
+            where: { id: productIds[i], isActive: true, available: true },
+            select: { id: true, name: true, price: true },
+          });
+        }
+        if (!product) {
+          product = await prisma.product.findFirst({
+            where: { name: names[i], isActive: true, available: true },
+            select: { id: true, name: true, price: true },
+          });
+        }
+        if (!product) {
+          return res.status(400).json({
+            error: `Produs indisponibil sau inactiv: ${names[i] || '(fără nume)'}`,
+            code: 'PRODUCT_UNAVAILABLE',
+          });
+        }
+        const rawPrice = product.price != null ? product.price : 0;
+        const price = Math.max(0, Number(rawPrice) || parseFloat(String(rawPrice)) || 0);
+        const qty = quantities[i];
+        subtotal += price * qty;
+        itemsData.push({ name: product.name, price, quantity: qty });
+      }
+      backendTotal = Math.round((subtotal + PRODUCT_DELIVERY_FEE) * 100) / 100;
+    }
+
+    const clientTotal = Number(total);
+    if (Math.abs(clientTotal - backendTotal) > 0.01) {
+      return res.status(409).json({ code: 'TOTAL_MISMATCH' });
     }
 
     const deliveryAddr = deliveryAddress ? String(deliveryAddress).trim() : '';
@@ -107,9 +149,10 @@ router.post('/', cartOrderCreateLimiter, authenticateToken, validate(createMvpOr
       const newOrder = await tx.cartOrder.create({
         data: {
           userId: userId || null,
+          idempotencyKey: idempotencyKey || undefined,
           orderType: type,
           status: 'PENDING',
-          total: totalNum,
+          total: backendTotal,
           paymentMethod: pm,
           deliveryAddress: deliveryAddr || null,
           phone: phone ? String(phone).trim() : null,
@@ -143,6 +186,16 @@ router.post('/', cartOrderCreateLimiter, authenticateToken, validate(createMvpOr
 
     res.status(201).json({ success: true, orderId: order.id });
   } catch (error) {
+    if (error.code === 'P2002') {
+      // Unique violation (userId, idempotencyKey) – race: another request created same key
+      const existing = await prisma.cartOrder.findFirst({
+        where: { userId, idempotencyKey: idempotencyKey || undefined, deletedAt: null },
+        select: { id: true },
+      }).catch(() => null);
+      if (existing) {
+        return res.status(201).json({ success: true, orderId: existing.id });
+      }
+    }
     console.error('[POST /cart-orders] Prisma/DB Error:', {
       message: error.message,
       code: error.code,
@@ -150,11 +203,11 @@ router.post('/', cartOrderCreateLimiter, authenticateToken, validate(createMvpOr
       stack: error.stack,
     });
     const code = error.code || 'CREATE_ORDER_ERROR';
-    const message = error.meta?.message || error.message || 'Eroare la crearea comenzii';
-    res.status(500).json({
-      error: message,
-      code,
-    });
+    const rawMessage = error.meta?.message ?? error.message;
+    const message = typeof rawMessage === 'string' ? rawMessage : 'Eroare la crearea comenzii';
+    if (!res.headersSent) {
+      res.status(500).json({ error: message, code });
+    }
   }
 });
 
@@ -224,6 +277,8 @@ router.patch('/:id/status', authenticateToken, requireAdmin, validate(updateOrde
     });
 
     if (status != null) {
+      const { logOrderStatusChange } = require('../utils/orderStatusLog');
+      await logOrderStatusChange(id, order.status, data.status, req.userId || null);
       emitOrderStatus(updatedOrder);
     }
 
