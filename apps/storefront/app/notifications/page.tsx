@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/authStore";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import BottomNavigation from "@/components/ui/BottomNavigation";
+import SwipeableNotificationCard from "@/components/notifications/SwipeableNotificationCard";
 import { api, type Order } from "@/lib/api";
-import { getActiveOrdersCount, getOrderStatusClass, ORDER_STATUS_LABEL } from "@/lib/orderStatus";
+import { getOrderStatusClass, ORDER_STATUS_LABEL, isFinalOrderStatus } from "@/lib/orderStatus";
+import { getSeenOrderIds, clearSeenForFinalOrders } from "@/lib/notificationSeen";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("ro-RO", {
@@ -22,32 +24,77 @@ function NotificationsContent() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchOrders = () => {
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  /** ID-uri ascunse în această sesiune; la fallback (getMy) le filtrăm ca să nu reapără */
+  const dismissedIdsRef = useRef<Set<string>>(new Set());
+
+  const fetchNotifications = useCallback(() => {
     if (!user) return;
-    api.orders
-      .getMy()
-      .then((res) => setOrders(res.data.orders ?? []))
-      .catch(() => setOrders([]))
-      .finally(() => setLoading(false));
-  };
+    api.notifications
+      .getList()
+      .then((res) => {
+        const list = res.data.orders ?? [];
+        setOrders(list);
+        const finalIds = list.filter((o) => isFinalOrderStatus(o.status)).map((o) => o.id);
+        if (finalIds.length) clearSeenForFinalOrders(finalIds);
+        setLoading(false);
+      })
+      .catch(() => {
+        api.orders
+          .getMy()
+          .then((res) => {
+            const list = res.data.orders ?? [];
+            const filtered = list.filter((o) => !dismissedIdsRef.current.has(o.id));
+            setOrders(filtered);
+            const finalIds = list.filter((o) => isFinalOrderStatus(o.status)).map((o) => o.id);
+            if (finalIds.length) clearSeenForFinalOrders(finalIds);
+          })
+          .catch(() => setOrders([]))
+          .finally(() => setLoading(false));
+      });
+  }, [user]);
+
+  const handleSwipeDelete = useCallback((orderId: string) => {
+    dismissedIdsRef.current.add(orderId);
+    setRemovingId(orderId);
+    setTimeout(() => {
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      setRemovingId(null);
+    }, 350);
+    api.notifications.dismiss(orderId).catch(() => {
+      fetchNotifications();
+    });
+  }, [fetchNotifications]);
 
   useEffect(() => {
     if (!user) return;
     setLoading(true);
-    fetchOrders();
-  }, [user]);
+    fetchNotifications();
+  }, [user, fetchNotifications]);
 
-  // Re-fetch când revii pe tab (același pattern ca pe Orders list)
   useEffect(() => {
     if (!user) return;
     const onVisibility = () => {
-      if (document.visibilityState === "visible") fetchOrders();
+      if (document.visibilityState === "visible") fetchNotifications();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [user]);
+  }, [user, fetchNotifications]);
 
-  const activeCount = getActiveOrdersCount(orders);
+  // Refetch periodic când tab-ul e vizibil și există comenzi active, ca refuzul curier să apară în listă
+  useEffect(() => {
+    if (!user) return;
+    const hasActive = orders.some((o) => !isFinalOrderStatus(o.status));
+    if (!hasActive) return;
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") fetchNotifications();
+    }, 18000);
+    return () => clearInterval(interval);
+  }, [user, orders.length, fetchNotifications]);
+
+  const activeOrders = orders.filter((o) => !isFinalOrderStatus(o.status));
+  const seenIds = getSeenOrderIds();
+  const unreadCount = activeOrders.filter((o) => !seenIds.includes(o.id)).length;
 
   if (isLoading || !user) {
     return (
@@ -76,7 +123,7 @@ function NotificationsContent() {
             <p className="text-white/60 text-sm">Status comenzi</p>
           </div>
           <span className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-amber-500/80 px-2 text-xs font-semibold text-black">
-            {activeCount > 99 ? "99+" : activeCount}
+            {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         </div>
 
@@ -92,31 +139,57 @@ function NotificationsContent() {
             <p className="mt-1 text-sm text-white/60">Comenzile tale vor apărea aici.</p>
           </div>
         ) : (
-          <ul className="space-y-3">
-            {orders.map((order) => (
-              <li key={order.id}>
-                <Link
-                  href={`/orders/${order.id}`}
-                  className="block rounded-2xl border border-white/20 bg-white/10 p-4 hover:border-white/30 hover:bg-white/15 transition"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-medium text-white">
-                        Comandă #{order.id.slice(0, 8)}
-                      </p>
-                      <p className="mt-0.5 text-sm text-white/60">
-                        {formatDate(order.createdAt)} · {Number(order.total).toFixed(2)} lei
-                      </p>
-                    </div>
-                    <span
-                      className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getOrderStatusClass(order.status)}`}
+          <ul>
+            {orders.map((order) => {
+              const isCanceled = order.status === "CANCELLED" || order.status === "CANCELED";
+              const isRefusedFinal = isCanceled && !!order.lastCourierRefusedAt;
+              const isSearchingCourier = order.status === "PENDING" && !!order.lastCourierRefusedAt;
+              const label = isRefusedFinal
+                ? "Refuzată"
+                : isSearchingCourier
+                  ? "Căutăm curier"
+                  : ORDER_STATUS_LABEL[order.status] ?? order.status;
+              const badgeClass = isSearchingCourier ? "bg-amber-500/25 text-amber-300" : getOrderStatusClass(order.status);
+              return (
+                <li key={order.id}>
+                  <SwipeableNotificationCard
+                    orderId={order.id}
+                    isRemoving={removingId === order.id}
+                    onSwipeDelete={handleSwipeDelete}
+                  >
+                    <Link
+                      href={`/orders/${order.id}`}
+                      className="block rounded-2xl border border-white/20 bg-white/10 p-4 hover:border-white/30 hover:bg-white/15 transition"
                     >
-                      {ORDER_STATUS_LABEL[order.status] ?? order.status}
-                    </span>
-                  </div>
-                </Link>
-              </li>
-            ))}
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-medium text-white">
+                            Comandă #{order.id.slice(0, 8)}
+                          </p>
+                          <p className="mt-0.5 text-sm text-white/60">
+                            {formatDate(order.createdAt)} · {Number(order.total).toFixed(2)} lei
+                          </p>
+                          {(isSearchingCourier || isRefusedFinal) && (
+                            <p className="mt-1 text-xs text-amber-300/90">
+                              {isRefusedFinal
+                                ? (order.lastCourierRefusedReason?.trim()
+                                    ? `Comandă refuzată: ${order.lastCourierRefusedReason}`
+                                    : "Comandă refuzată de curier.")
+                                : order.lastCourierRefusedReason?.trim()
+                                  ? `Un curier a refuzat: ${order.lastCourierRefusedReason}`
+                                  : "Un curier a refuzat. Căutăm alt curier."}
+                            </p>
+                          )}
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${badgeClass}`}>
+                          {label}
+                        </span>
+                      </div>
+                    </Link>
+                  </SwipeableNotificationCard>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

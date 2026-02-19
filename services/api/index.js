@@ -93,6 +93,10 @@ app.use("/admin", adminRoutes);
 const courierRoutes = require("./routes/courier");
 app.use("/courier", courierRoutes);
 
+// Notificări (lista pentru /notificati + dismiss prin swipe)
+const notificationsRoutes = require("./routes/notifications");
+app.use("/notifications", notificationsRoutes);
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error("Error:", err);

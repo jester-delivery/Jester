@@ -70,9 +70,9 @@ export default function CourierOrderDetailPage() {
     };
   }, [authReady, isAuthenticated, user, canAccess, id, router]);
 
-  const isRefusedByMe = !!(order as { refusedByMe?: boolean }).refusedByMe;
+  const isRefusedByMe = !!(order && (order as { refusedByMe?: boolean }).refusedByMe);
   const isAvailable =
-    order?.status === "PENDING" && !order?.assignedCourierId && !isRefusedByMe;
+    !!order && order.status === "PENDING" && !order.assignedCourierId && !isRefusedByMe;
   const isMine = order?.assignedCourierId === user?.id;
   const orderIdSafe = order?.id ?? "";
 
@@ -184,7 +184,7 @@ export default function CourierOrderDetailPage() {
             {(order as { statusDisplay?: string }).statusDisplay === "REFUSED" ? "Refuzată" : order.status}
           </p>
           {(order as { refusedReason?: string | null }).refusedReason && (
-            <p className="mt-1 text-sm text-white/60 italic">{(order as { refusedReason: string }).refusedReason}</p>
+            <p className="mt-1 text-sm text-white/60 italic">{(order as { refusedReason?: string | null }).refusedReason}</p>
           )}
 
           <p className="mt-4 text-xs text-white/50">Adresă livrare</p>

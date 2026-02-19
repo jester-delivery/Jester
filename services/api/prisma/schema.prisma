@@ -24,8 +24,21 @@ model User {
   orders       Order[]
   cartOrders   CartOrder[]
   addresses    Address[]
+  notificationDismissals NotificationDismissal[]
 
   @@map("users")
+}
+
+/** Comenzi ascunse de user din lista de notificări (swipe-to-dismiss). */
+model NotificationDismissal {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  orderId   String   @map("order_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orderId])
+  @@map("notification_dismissals")
 }
 
 model Address {
@@ -46,13 +59,16 @@ model Address {
 }
 
 model Category {
-  id        String    @id @default(uuid())
-  name      String
-  slug      String    @unique
-  image     String?
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  products  Product[]
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?   @db.Text
+  image       String?   // icon/logo URL
+  isActive    Boolean   @default(true) @map("is_active") // OFF = nu apare în hub
+  sortOrder   Int?      @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  products    Product[]
 
   @@map("categories")
 }

@@ -63,7 +63,7 @@ export default function BottomNavigation({
   const pathname = usePathname();
   const { isAuthenticated, user } = useAuthStore();
   const showCourier = user?.role === "COURIER" || user?.role === "ADMIN";
-  const items = [
+  const items: NavItem[] = [
     ...navItems,
     ...(showCourier ? [{ label: "Curier", href: "/courier", icon: Package }] : []),
   ];

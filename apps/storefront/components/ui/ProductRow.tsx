@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Image from "next/image";
 import { useJester24CartStore } from "@/stores/jester24CartStore";
+import { CART_ADD_TOAST, CART_QUANTITY_TOAST } from "@/lib/jesterToasts";
 
 type ProductRowProps = {
   name: string;
@@ -44,6 +45,8 @@ export default function ProductRow({
   const items = useJester24CartStore((s) => s.items);
 
   const [quantity, setQuantity] = useState(0);
+  /** Micro-feedback: scurt highlight pe butonul + după add (scale + ring). */
+  const [addFeedback, setAddFeedback] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -53,12 +56,24 @@ export default function ProductRow({
 
   const isInCart = quantity > 0;
 
+  const feedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerAddFeedback = useCallback(() => {
+    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
+    setAddFeedback(true);
+    feedbackTimeoutRef.current = setTimeout(() => {
+      setAddFeedback(false);
+      feedbackTimeoutRef.current = null;
+    }, 320);
+  }, []);
+  useEffect(() => () => { if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current); }, []);
+
   const handleAdd = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!id || !section || !isAvailable) return;
     addItem({ id, name, price, image, section });
-    showToast?.("Produs adăugat în coș");
+    triggerAddFeedback();
+    showToast?.(CART_ADD_TOAST);
     const target = (e.target as HTMLElement).closest("button") ?? (e.currentTarget as HTMLElement);
     const rect = target.getBoundingClientRect();
     onAddWithFly?.(rect, image);
@@ -69,7 +84,8 @@ export default function ProductRow({
     e.stopPropagation();
     if (!id) return;
     inc(id);
-    showToast?.("Cantitate actualizată");
+    triggerAddFeedback();
+    showToast?.(CART_QUANTITY_TOAST);
   };
 
   const handleDec = (e: React.MouseEvent) => {
@@ -77,14 +93,15 @@ export default function ProductRow({
     e.stopPropagation();
     if (!id) return;
     dec(id);
-    showToast?.("Cantitate actualizată");
+    showToast?.(CART_QUANTITY_TOAST);
   };
 
   const handleRowClick = (e?: React.MouseEvent) => {
     if (!id || !section || !isAvailable) return;
     if (!isInCart) {
       addItem({ id, name, price, image, section });
-      showToast?.("Produs adăugat în coș");
+      triggerAddFeedback();
+      showToast?.(CART_ADD_TOAST);
       if (e) {
         const target = (e.target as HTMLElement).closest("[role=button]") ?? (e.currentTarget as HTMLElement);
         const rect = target.getBoundingClientRect();
@@ -136,18 +153,20 @@ export default function ProductRow({
         />
       </div>
 
-      {/* Info dreapta */}
-      <div className="flex flex-1 flex-col justify-center gap-1 px-4 py-3 min-w-0">
+      {/* Info dreapta – preț evidențiat (bold, separat de descriere) */}
+      <div className="flex flex-1 flex-col justify-center gap-1 px-4 py-3 min-w-0 overflow-hidden">
         <h3 className="text-base font-semibold text-white line-clamp-2 sm:text-lg">
           {name}
         </h3>
         {description && (
           <p className="text-xs text-white/70 line-clamp-2 sm:text-sm">{description}</p>
         )}
-        <p className="text-lg font-bold text-white">
-          {price.toFixed(2)}{" "}
-          <span className="text-sm font-normal text-white/70">lei</span>
-        </p>
+        <div className="mt-2 border-t border-white/20 pt-2">
+          <p className="text-xl font-bold text-white tracking-tight">
+            {price.toFixed(2)}{" "}
+            <span className="text-sm font-semibold text-white/80">lei</span>
+          </p>
+        </div>
       </div>
 
       {/* Add / Stepper (dreapta jos) - doar când id + section + isAvailable */}
@@ -162,7 +181,9 @@ export default function ProductRow({
             <button
               type="button"
               onClick={handleAdd}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-white transition-colors hover:bg-white/30"
+              className={`flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-white transition-all duration-200 hover:bg-white/30 active:scale-95 ${
+                addFeedback ? "scale-105 ring-2 ring-amber-400/70" : ""
+              }`}
               aria-label="Adaugă în coș"
             >
               <span className="text-lg font-bold">+</span>
@@ -183,7 +204,9 @@ export default function ProductRow({
               <button
                 type="button"
                 onClick={handleInc}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-white hover:bg-white/20"
+                className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-all duration-200 hover:bg-white/20 active:scale-95 ${
+                  addFeedback ? "scale-105 ring-2 ring-amber-400/60" : ""
+                }`}
                 aria-label="Adaugă"
               >
                 +

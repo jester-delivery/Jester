@@ -11,6 +11,7 @@ import { api, type Address } from "@/lib/api";
 import { PRODUCT_DELIVERY_FEE, VAT_RATE } from "@/lib/config/delivery";
 import AddressSelector from "@/components/checkout/AddressSelector";
 import Toast from "@/components/ui/Toast";
+import { ORDER_PLACED_TOAST } from "@/lib/jesterToasts";
 
 function formatAddressForOrder(addr: Address) {
   const parts = [addr.street];
@@ -206,7 +207,7 @@ export default function CheckoutPage() {
       }
       await api.cartOrders.create(payload, { idempotencyKey: idempotencyKeyRef.current });
       clearCart();
-      setToastMessage("Comandă plasată cu succes");
+      setToastMessage(ORDER_PLACED_TOAST);
       setTimeout(() => {
         router.push("/orders?placed=1");
       }, 600);

@@ -33,7 +33,7 @@ function OrderCard({
 }: {
   order: Order | OrderWithRefused;
   onAccept?: (id: string) => void;
-  onRefuse?: (id: string) => void;
+  onRefuse?: (id: string, reason?: string) => void;
   showActions?: boolean;
   onStatusChange?: (id: string, status: "ON_THE_WAY" | "DELIVERED") => void;
 }) {

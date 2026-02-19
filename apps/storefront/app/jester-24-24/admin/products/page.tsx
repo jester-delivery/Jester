@@ -17,6 +17,9 @@ export default function AdminProductsPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
   const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [search, setSearch] = useState<string>("");
+  const [isActiveFilter, setIsActiveFilter] = useState<string>("");
+  const [availableFilter, setAvailableFilter] = useState<string>("");
   const [categories, setCategories] = useState<{ id: string; slug: string; name: string }[]>([]);
   const [editingProduct, setEditingProduct] = useState<AdminProduct | null>(null);
   const [editForm, setEditForm] = useState<{
@@ -27,11 +30,12 @@ export default function AdminProductsPage() {
     categorySlug: string;
     isActive: boolean;
     available: boolean;
-  }>({ name: "", description: "", price: "", image: "", categorySlug: "", isActive: true, available: true });
+    sortOrder: string;
+  }>({ name: "", description: "", price: "", image: "", categorySlug: "", isActive: true, available: true, sortOrder: "" });
 
   const fetchCategories = useCallback(async () => {
     try {
-      const res = await api.categories.getAll();
+      const res = await api.admin.getCategories();
       setCategories(res.data.categories ?? []);
     } catch {
       setCategories([]);
@@ -39,10 +43,16 @@ export default function AdminProductsPage() {
   }, []);
 
   const fetchProducts = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await api.admin.getProducts(
-        categoryFilter ? { category: categoryFilter } : undefined
-      );
+      const params: { category?: string; search?: string; isActive?: string; available?: string } = {};
+      if (categoryFilter) params.category = categoryFilter;
+      if (search.trim()) params.search = search.trim();
+      if (isActiveFilter === "1") params.isActive = "true";
+      if (isActiveFilter === "0") params.isActive = "false";
+      if (availableFilter === "1") params.available = "true";
+      if (availableFilter === "0") params.available = "false";
+      const res = await api.admin.getProducts(Object.keys(params).length ? params : undefined);
       setProducts(res.data.products ?? []);
       setError(null);
     } catch (err: unknown) {
@@ -55,7 +65,7 @@ export default function AdminProductsPage() {
     } finally {
       setLoading(false);
     }
-  }, [categoryFilter, router]);
+  }, [categoryFilter, search, isActiveFilter, availableFilter, router]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -132,14 +142,24 @@ export default function AdminProductsPage() {
       categorySlug: p.category?.slug ?? "",
       isActive: p.isActive,
       available: p.available,
+      sortOrder: p.sortOrder != null ? String(p.sortOrder) : "",
     });
   };
 
   const handleEditSave = async () => {
     if (!editingProduct) return;
     const priceNum = parseFloat(editForm.price.replace(",", "."));
-    if (editForm.name.trim() === "" || isNaN(priceNum) || priceNum < 0) {
-      setError("Nume și preț valid obligatorii.");
+    if (editForm.name.trim() === "") {
+      setError("Numele este obligatoriu.");
+      return;
+    }
+    if (isNaN(priceNum) || priceNum <= 0) {
+      setError("Prețul trebuie să fie > 0.");
+      return;
+    }
+    const sortOrderNum = editForm.sortOrder.trim() === "" ? undefined : parseInt(editForm.sortOrder.trim(), 10);
+    if (editForm.sortOrder.trim() !== "" && (isNaN(sortOrderNum!) || sortOrderNum! < 0)) {
+      setError("Sort order trebuie să fie un număr ≥ 0.");
       return;
     }
     setUpdatingId(editingProduct.id);
@@ -153,6 +173,7 @@ export default function AdminProductsPage() {
         categorySlug: editForm.categorySlug || undefined,
         isActive: editForm.isActive,
         available: editForm.available,
+        sortOrder: sortOrderNum ?? null,
       });
       await fetchProducts();
       setEditingProduct(null);
@@ -189,6 +210,12 @@ export default function AdminProductsPage() {
             ← Comenzi
           </Link>
           <Link
+            href="/jester-24-24/admin/categories"
+            className="text-sm text-white/70 underline hover:text-white"
+          >
+            Categorii
+          </Link>
+          <Link
             href="/jester-24-24"
             className="text-sm text-white/70 underline hover:text-white"
           >
@@ -201,6 +228,21 @@ export default function AdminProductsPage() {
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
+          <input
+            type="search"
+            placeholder="Caută după nume..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && fetchProducts()}
+            className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 w-48"
+          />
+          <button
+            type="button"
+            onClick={() => fetchProducts()}
+            className="rounded-lg bg-white/20 px-3 py-2 text-sm text-white hover:bg-white/30"
+          >
+            Caută
+          </button>
           <label className="text-sm text-white/70">Categorie:</label>
           <select
             value={categoryFilter}
@@ -213,6 +255,26 @@ export default function AdminProductsPage() {
                 {c.name}
               </option>
             ))}
+          </select>
+          <label className="text-sm text-white/70">Vizibil (ON/OFF):</label>
+          <select
+            value={isActiveFilter}
+            onChange={(e) => setIsActiveFilter(e.target.value)}
+            className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white"
+          >
+            <option value="">Toate</option>
+            <option value="1">ON</option>
+            <option value="0">OFF</option>
+          </select>
+          <label className="text-sm text-white/70">Disponibil:</label>
+          <select
+            value={availableFilter}
+            onChange={(e) => setAvailableFilter(e.target.value)}
+            className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white"
+          >
+            <option value="">Toate</option>
+            <option value="1">Da</option>
+            <option value="0">Nu</option>
           </select>
           <button
             type="button"
@@ -399,6 +461,17 @@ export default function AdminProductsPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/60">Sort order (număr)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editForm.sortOrder}
+                    onChange={(e) => setEditForm((f) => ({ ...f, sortOrder: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder:text-white/40"
+                    placeholder="0"
+                  />
                 </div>
                 <div className="flex flex-wrap gap-4 pt-2">
                   <label className="flex cursor-pointer items-center gap-2 text-sm text-white/80">

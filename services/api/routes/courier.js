@@ -133,10 +133,17 @@ router.post('/orders/:id/refuse', async (req, res) => {
 
     const orderWithItems = await prisma.cartOrder.findUnique({
       where: { id: orderId },
-      include: { items: true },
+      include: {
+        items: true,
+        courierRejections: { orderBy: { rejectedAt: 'desc' }, take: 1, select: { rejectedAt: true, reason: true } },
+      },
     });
     if (orderWithItems) {
-      emitOrderStatus(orderWithItems, { reason: 'courier_refused' });
+      const { courierRejections, ...rest } = orderWithItems;
+      const last = orderWithItems.courierRejections?.[0];
+      const lastCourierRefusedAt = last?.rejectedAt?.toISOString?.() ?? null;
+      const lastCourierRefusedReason = last?.reason ?? null;
+      emitOrderStatus({ ...rest, lastCourierRefusedAt, lastCourierRefusedReason }, { reason: 'courier_refused' });
     }
 
     res.json({ success: true });

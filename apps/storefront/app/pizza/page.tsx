@@ -7,6 +7,7 @@ import ProductRow from "@/components/ui/ProductRow";
 import Toast from "@/components/ui/Toast";
 import CartDrawer from "@/components/jester24/CartDrawer";
 import CartHeaderButton from "@/components/jester24/CartHeaderButton";
+import FlyToCart from "@/components/jester24/FlyToCart";
 import Jester24BottomBarSwitcher from "@/components/jester24/Jester24BottomBarSwitcher";
 import { useCategory } from "@/lib/useCategory";
 import { useJester24CartStore } from "@/stores/jester24CartStore";
@@ -20,7 +21,10 @@ export default function PizzaPage() {
   const { products, loading, error, refetch } = useCategory("pizza");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [flyState, setFlyState] = useState<{ from: DOMRect; image: string } | null>(null);
+  const [bounceTrigger, setBounceTrigger] = useState(0);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cartButtonRef = useRef<HTMLButtonElement>(null);
 
   const items = useJester24CartStore((s) => s.items);
 
@@ -44,7 +48,7 @@ export default function PizzaPage() {
   }, [items.length, router]);
 
   return (
-    <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24">
+    <main className="min-h-screen overflow-x-hidden text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24">
       <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-[#050610]/90 backdrop-blur-md safe-area-inset-top">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 pt-4 pb-4">
           <div className="min-w-0 flex-1">
@@ -52,7 +56,11 @@ export default function PizzaPage() {
             <p className="mt-0.5 text-sm text-white/70">Alege și adaugă în coș</p>
           </div>
           <div className="shrink-0 pl-2">
-            <CartHeaderButton onClick={() => setDrawerOpen(true)} />
+            <CartHeaderButton
+              ref={cartButtonRef}
+              onClick={() => setDrawerOpen(true)}
+              bounceTrigger={bounceTrigger}
+            />
           </div>
         </div>
         <div className="mx-auto max-w-4xl px-4 pb-4">
@@ -77,7 +85,7 @@ export default function PizzaPage() {
           <p className="text-white/70">Niciun produs momentan.</p>
         )}
         {!loading && !error && products.length > 0 && (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4">
             {products.map((product) => (
               <ProductRow
                 key={product.id}
@@ -89,12 +97,24 @@ export default function PizzaPage() {
                 image={product.image ?? "https://i.imgur.com/W5X0s4C.jpeg"}
                 isAvailable={product.isAvailable}
                 showToast={showToast}
+                onAddWithFly={(fromRect, imageUrl) => setFlyState({ from: fromRect, image: imageUrl })}
               />
             ))}
           </div>
         )}
       </div>
 
+      {flyState && (
+        <FlyToCart
+          fromRect={flyState.from}
+          imageUrl={flyState.image}
+          cartRef={cartButtonRef}
+          onComplete={() => {
+            setFlyState(null);
+            setBounceTrigger((t) => t + 1);
+          }}
+        />
+      )}
       <CartDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}

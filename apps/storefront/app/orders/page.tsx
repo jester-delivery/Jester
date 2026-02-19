@@ -8,6 +8,7 @@ import BottomNavigation from "@/components/ui/BottomNavigation";
 import Toast from "@/components/ui/Toast";
 import { api, type Order } from "@/lib/api";
 import { getOrderStatusClass, ORDER_STATUS_LABEL, PACKAGE_ORDER_STATUS_LABEL } from "@/lib/orderStatus";
+import { ORDER_STATUS_TOAST, REFUSAL_TOAST, ORDER_DELETED_TOAST, ORDER_DELETE_ERROR_TOAST, TOAST_DURATION_MS } from "@/lib/jesterToasts";
 import { useAuthStore } from "@/stores/authStore";
 import { useAuthReady } from "@/hooks/useAuthReady";
 
@@ -22,16 +23,7 @@ function formatDate(iso: string) {
   });
 }
 
-const STATUS_TOAST: Record<string, string> = {
-  ACCEPTED: "Comanda ta a fost acceptată!",
-  CONFIRMED: "Comanda ta a fost acceptată!",
-  PREPARING: "Comanda ta se pregătește.",
-  ON_THE_WAY: "Comanda ta e în drum spre tine!",
-  OUT_FOR_DELIVERY: "Comanda ta e în drum spre tine!",
-  DELIVERED: "Comanda ta a fost livrată.",
-  CANCELED: "Comanda ta a fost anulată.",
-  CANCELLED: "Comanda ta a fost anulată.",
-};
+const STATUS_TOAST = ORDER_STATUS_TOAST;
 const STATUS_LABEL = ORDER_STATUS_LABEL;
 
 const DELETABLE_STATUS = "PENDING";
@@ -89,11 +81,23 @@ function OrderCard({
           <span className="text-sm font-medium text-white/90">
             #{typeof order.id === "string" ? order.id.slice(0, 8) : ""} · {formatDate(order.createdAt)}
           </span>
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-semibold ${getOrderStatusClass(order.status)}`}
-          >
-            {(order.orderType === "package_delivery" ? PACKAGE_ORDER_STATUS_LABEL : ORDER_STATUS_LABEL)[order.status] ?? order.status}
-          </span>
+          {(() => {
+            const isCanceled = order.status === "CANCELLED" || order.status === "CANCELED";
+            const isRefusedFinal = isCanceled && !!order.lastCourierRefusedAt;
+            const isSearchingCourier = order.status === "PENDING" && !!order.lastCourierRefusedAt;
+            const label = isRefusedFinal
+              ? "Refuzată"
+              : isSearchingCourier
+                ? "Căutăm curier"
+                : (order.orderType === "package_delivery" ? PACKAGE_ORDER_STATUS_LABEL : ORDER_STATUS_LABEL)[order.status] ??
+                  order.status;
+            const cls = isSearchingCourier ? "bg-amber-500/25 text-amber-300" : getOrderStatusClass(order.status);
+            return (
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>
+                {label}
+              </span>
+            );
+          })()}
         </div>
         <div className="mt-3 flex items-baseline justify-between gap-2">
           <span className="text-xl font-bold text-white">
@@ -103,6 +107,11 @@ function OrderCard({
             {order.items.length} produs(e)
           </span>
         </div>
+        {(order.status === "PENDING" && order.lastCourierRefusedAt) || ((order.status === "CANCELLED" || order.status === "CANCELED") && order.lastCourierRefusedAt)
+          ? order.lastCourierRefusedReason?.trim() && (
+              <p className="mt-2 text-xs text-white/50 italic">Motiv refuz: {order.lastCourierRefusedReason}</p>
+            )
+          : null}
       </Link>
       {canDelete ? (
         <button
@@ -203,7 +212,7 @@ function OrdersPageContent() {
     toastTimerRef.current = setTimeout(() => {
       setToastMessage(null);
       toastTimerRef.current = null;
-    }, 3500);
+    }, TOAST_DURATION_MS);
   }, []);
 
   const fetchOrders = useCallback(async (signal?: AbortSignal) => {
@@ -213,14 +222,20 @@ function OrdersPageContent() {
       setOrders(newOrders);
       setError(null);
 
-      // Detectare schimbare status → toast (doar după prima încărcare)
+      // Detectare schimbare status sau refuz curier → toast (doar după prima încărcare)
       if (prevOrdersRef.current.length > 0) {
         for (const newOrder of newOrders) {
           const prev = prevOrdersRef.current.find((o) => o.id === newOrder.id);
-          if (prev && prev.status !== newOrder.status) {
+          if (!prev) continue;
+          const refusedNow = !!newOrder.lastCourierRefusedAt && !prev.lastCourierRefusedAt;
+          if (refusedNow) {
+            showToast(REFUSAL_TOAST);
+            break;
+          }
+          if (prev.status !== newOrder.status) {
             const msg = STATUS_TOAST[newOrder.status] ?? `Comanda ta: ${STATUS_LABEL[newOrder.status] ?? newOrder.status}`;
             showToast(msg);
-            break; // un singur toast per refresh
+            break;
           }
         }
       }
@@ -236,14 +251,14 @@ function OrdersPageContent() {
   const handleDeleteOrder = useCallback(
     async (order: Order) => {
       setOrders((prev) => prev.filter((o) => o.id !== order.id));
-      showToast("Comandă ștearsă");
+      showToast(ORDER_DELETED_TOAST);
       try {
         await api.orders.delete(order.id);
       } catch (err: any) {
         const status = err.response?.status;
         // 400/404 = deja ștearsă sau invalidă – nu mai afișăm eroare, list-ul e deja actualizat
         if (status === 400 || status === 404) return;
-        showToast("Eroare la ștergere. Reîncarcăm lista.");
+        showToast(ORDER_DELETE_ERROR_TOAST);
         fetchOrders();
       }
     },
@@ -270,14 +285,15 @@ function OrdersPageContent() {
       fetchOrders(controller.signal);
     };
     run();
-    const interval = setInterval(run, 12000);
+    const pollMs = orders.some((o) => o.status === "PENDING") ? 5000 : 12000;
+    const interval = setInterval(run, pollMs);
     return () => {
       cancelled = true;
       controller.abort();
       clearInterval(interval);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
-  }, [isAuthenticated, user, fetchOrders]);
+  }, [isAuthenticated, user, fetchOrders, orders]);
 
   // Re-fetch la focus/visibility: după ce revii de pe order detail (SSE acolo), list-ul se actualizează
   useEffect(() => {

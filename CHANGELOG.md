@@ -4,6 +4,72 @@ Acest fișier documentează toate modificările importante și progresul proiect
 
 ---
 
+## [2026-02-13] - Admin Products Manager & Categories Manager (TASK 5 & 6)
+
+### ✅ Task-uri Finalizate
+
+#### **TASK 5 – Admin Products Manager (MVP)** ✅
+**Status:** Completat  
+**Data:** 13 Februarie 2026
+
+**Ce s-a implementat:**
+
+**API (backend):**
+- **GET /admin/products** – parametri: `category`, `search` (căutare după nume), `isActive` (true/false/1/0), `available` (true/false/1/0). Sortare: `sortOrder` asc, apoi `name` asc.
+- **PATCH /admin/products/:id** – deja suporta: name, description, price, image, categorySlug, isActive, available, sortOrder, stock. Validare: preț > 0 când e trimis, nume obligatoriu. Audit: `updatedAt` salvat corect (schema Prisma).
+
+**Storefront (admin UI):**
+- **Listă produse:** căutare (input + buton Caută), filtru categorie, filtru „Vizibil ON/OFF” (Toate/ON/OFF), filtru „Disponibil” (Toate/Da/Nu). Quick toggles în listă: buton ON/OFF pentru isActive, buton Da/Nu pentru available (fără edit).
+- **Edit produs (modal):** name, description, price, image (URL), category (select), isActive (checkbox), available (checkbox), **sortOrder** (număr). Validare: nume obligatoriu, preț > 0, sortOrder ≥ 0.
+- După modificare produs, la refresh pe client se văd imediat datele din API.
+
+**Fișiere modificate:**
+- `services/api/routes/admin.js` (GET /admin/products cu search, isActive, available; PATCH deja cu sortOrder)
+- `services/api/utils/validation.js` (updateProductSchema: price .positive())
+- `apps/storefront/lib/api.ts` (admin.getProducts params: search, isActive, available; AdminProduct sortOrder)
+- `apps/storefront/app/jester-24-24/admin/products/page.tsx` (search, filtre, edit cu sortOrder, validare)
+
+---
+
+#### **TASK 6 – Categories Manager & BubbleHub din API** ✅
+**Status:** Completat  
+**Data:** 13 Februarie 2026
+
+**Ce s-a implementat:**
+
+**Schema & API (backend):**
+- **Category (Prisma):** câmpuri adăugate: `description` (opțional), `isActive` (default true), `sortOrder` (opțional). DB sincronizat cu `prisma db push`.
+- **GET /categories** – parametru `activeOnly=1` sau `activeOnly=true` → doar categorii cu `isActive = true`. Sortare: `sortOrder` asc, apoi `name` asc.
+- **GET /admin/categories** – listă toate categoriile (inclusiv inactive), sortate, cu `_count: { products }`.
+- **PATCH /admin/categories/:id** – body: name (titlu), description (opțional), image (icon/logo URL), isActive, sortOrder. Validare: updateCategorySchema.
+
+**Storefront (admin UI):**
+- **Pagina Categorii** (`/jester-24-24/admin/categories`): listă cu slug, titlu (name), ON/OFF (isActive), sort order, număr produse. Quick toggle isActive în listă. Edit modal: titlu, descriere (opțional), icon/logo (URL), sortOrder, checkbox Activă. Link în nav admin (Comenzi, Produse, Categorii).
+
+**BubbleHub (client):**
+- **BubbleHub** citește din API: `GET /categories?activeOnly=1`. Doar categoriile active, sortate. Mapare: titlu = name, href = `/${slug}`, imagine = image sau logo implicit. Categoriile cu isActive OFF nu apar deloc în hub. La refresh pe client se vede imediat ordinea și setul de bule din API.
+
+**Fișiere create/modificate:**
+- `services/api/prisma/schema.prisma` (Category: description, isActive, sortOrder)
+- `services/api/routes/categories.js` (activeOnly, orderBy sortOrder + name)
+- `services/api/routes/admin.js` (GET /admin/categories, PATCH /admin/categories/:id)
+- `services/api/utils/validation.js` (updateCategorySchema)
+- `apps/storefront/lib/api.ts` (AdminCategory type, admin.getCategories, admin.updateCategory, categories.getAll cu activeOnly)
+- `apps/storefront/app/jester-24-24/admin/categories/page.tsx` (nou)
+- `apps/storefront/app/jester-24-24/admin/page.tsx` (link Categorii)
+- `apps/storefront/app/jester-24-24/admin/products/page.tsx` (link Categorii)
+- `apps/storefront/components/ui/BubbleHub.tsx` (fetch categories activeOnly, map la bule)
+
+---
+
+### 📊 Rezumat
+
+- **Admin Products Manager:** listă cu search, filtre (categorie, Active, Available), sortare după sortOrder + name, edit cu sortOrder, quick toggles isActive/available, validare price > 0 și name required.
+- **Admin Categories Manager:** listă categorii (slug, titlu, isActive, sortOrder, nr produse), edit (titlu, descriere, icon, isActive, sortOrder), quick toggle isActive.
+- **BubbleHub:** bulele vin din API; doar categorii active, sortate; la modificare în admin, după refresh clientul vede imediat.
+
+---
+
 ## [2026-02-13] - Autentificare Frontend Completă
 
 ### ✅ Task-uri Finalizate

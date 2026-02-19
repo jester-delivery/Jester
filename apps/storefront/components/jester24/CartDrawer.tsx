@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useJester24CartStore } from "@/stores/jester24CartStore";
+import { CART_QUANTITY_TOAST, CART_REMOVE_TOAST } from "@/lib/jesterToasts";
 
 type CartDrawerProps = {
   open: boolean;
@@ -25,17 +26,17 @@ export default function CartDrawer({
 
   const handleRemove = (id: string) => {
     removeItem(id);
-    showToast("Produs scos din coș");
+    showToast(CART_REMOVE_TOAST);
   };
 
   const handleDec = (id: string) => {
     dec(id);
-    showToast("Cantitate actualizată");
+    showToast(CART_QUANTITY_TOAST);
   };
 
   const handleInc = (id: string) => {
     inc(id);
-    showToast("Cantitate actualizată");
+    showToast(CART_QUANTITY_TOAST);
   };
 
   return (

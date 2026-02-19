@@ -150,6 +150,12 @@ export default function Jester2424AdminPage() {
           >
             Produse
           </Link>
+          <Link
+            href="/jester-24-24/admin/categories"
+            className="text-sm text-amber-400 underline hover:text-amber-300"
+          >
+            Categorii
+          </Link>
         </div>
         <h1 className="text-2xl font-bold sm:text-3xl">Comenzi (admin)</h1>
         <p className="mt-1 text-sm text-white/60">

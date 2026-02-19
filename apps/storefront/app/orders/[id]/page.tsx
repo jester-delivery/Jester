@@ -10,19 +10,11 @@ import { getOrderStatusClass, ORDER_STATUS_LABEL, PACKAGE_ORDER_STATUS_LABEL } f
 import { useAuthStore } from "@/stores/authStore";
 import { useAuthReady } from "@/hooks/useAuthReady";
 import { useOrderStream } from "@/lib/useOrderStream";
+import { markOrderSeen } from "@/lib/notificationSeen";
 import OrderStatusTimeline from "@/components/orders/OrderStatusTimeline";
+import { ORDER_STATUS_TOAST, REFUSAL_TOAST, TOAST_DURATION_MS } from "@/lib/jesterToasts";
 
 const LIVE_STATUSES = ["PENDING", "ACCEPTED", "CONFIRMED", "PREPARING", "ON_THE_WAY", "OUT_FOR_DELIVERY"];
-const STATUS_TOAST: Record<string, string> = {
-  ACCEPTED: "Comanda ta a fost acceptată!",
-  CONFIRMED: "Comanda ta a fost acceptată!",
-  PREPARING: "Comanda ta se pregătește.",
-  ON_THE_WAY: "Comanda ta e în drum spre tine!",
-  OUT_FOR_DELIVERY: "Comanda ta e în drum spre tine!",
-  DELIVERED: "Comanda ta a fost livrată.",
-  CANCELED: "Comanda ta a fost anulată.",
-  CANCELLED: "Comanda ta a fost anulată.",
-};
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("ro-RO", {
@@ -55,7 +47,7 @@ function OrderDetailContent() {
     toastTimerRef.current = setTimeout(() => {
       setToastMessage(null);
       toastTimerRef.current = null;
-    }, 3500);
+    }, TOAST_DURATION_MS);
   }, []);
 
   const lastStatusToastRef = useRef<{ status: string; at: number } | null>(null);
@@ -64,18 +56,31 @@ function OrderDetailContent() {
   const handleStatusChange = useCallback(
     (status: string, payload: unknown) => {
       const p = payload && typeof payload === "object" ? (payload as { order?: Order; reason?: string }) : {};
-      if (p.order) setOrder(p.order);
       const isRefusal = p.reason === "courier_refused";
       if (isRefusal) {
-        showToast("Un curier a refuzat comanda. Căutăm alt curier.");
+        if (p.order && typeof p.order === "object" && "lastCourierRefusedAt" in p.order) {
+          setOrder(p.order as Order);
+        } else {
+          setOrder((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  lastCourierRefusedAt: new Date().toISOString(),
+                  lastCourierRefusedReason: (p.order as Order)?.lastCourierRefusedReason ?? prev.lastCourierRefusedReason,
+                }
+              : null
+          );
+        }
+        showToast(REFUSAL_TOAST);
         if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate([100, 50, 100]);
         return;
       }
+      if (p.order) setOrder(p.order);
       const now = Date.now();
       const last = lastStatusToastRef.current;
       if (last && last.status === status && now - last.at < TOAST_DEDUPE_MS) return;
       lastStatusToastRef.current = { status, at: now };
-      const msg = STATUS_TOAST[status] ?? `Comanda ta: ${ORDER_STATUS_LABEL[status] ?? status}`;
+      const msg = ORDER_STATUS_TOAST[status] ?? `Comanda ta: ${ORDER_STATUS_LABEL[status] ?? status}`;
       showToast(msg);
       if (typeof navigator !== "undefined" && navigator.vibrate) {
         navigator.vibrate([100, 50, 100]);
@@ -85,6 +90,10 @@ function OrderDetailContent() {
   );
 
   useOrderStream(id ?? undefined, token, !!order && LIVE_STATUSES.includes(order.status), handleStatusChange);
+
+  useEffect(() => {
+    if (order?.id) markOrderSeen(order.id);
+  }, [order?.id]);
 
   const fetchOrder = useCallback(async () => {
     if (!id || typeof id !== "string" || id.trim() === "") {
@@ -205,6 +214,24 @@ function OrderDetailContent() {
             </div>
           </div>
         )}
+        {order.lastCourierRefusedAt && (
+          <div className="mt-4 rounded-2xl border border-amber-500/40 bg-amber-500/15 px-5 py-4 flex items-start gap-3">
+            <span className="shrink-0 mt-0.5 text-amber-300" aria-hidden>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </span>
+            <div>
+              <p className="font-semibold text-amber-300">Căutăm curier</p>
+              <p className="mt-1 text-sm text-amber-200/90">
+                Un curier a refuzat comanda. Căutăm alt curier pentru tine.
+                {order.lastCourierRefusedReason?.trim() && (
+                  <span className="block mt-1 text-amber-200/80">Motiv: {order.lastCourierRefusedReason}</span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
         <h1 className="mt-4 text-2xl font-bold">Comandă #{order.id.slice(0, 8)}</h1>
         <p className="mt-1 text-white/70">{formatDate(order.createdAt)}</p>
         {/* package_delivery = Jester Delivery (pachete); product_order sau lipsă = food, flow neschimbat */}
@@ -227,13 +254,34 @@ function OrderDetailContent() {
             Comandă live
           </span>
         )}
-        <span
-          className={`mt-2 inline-block rounded-full px-3 py-1 text-sm font-semibold ${getOrderStatusClass(order.status)}`}
-        >
-          {(order.orderType === "package_delivery" ? PACKAGE_ORDER_STATUS_LABEL : ORDER_STATUS_LABEL)[order.status] ?? order.status}
-        </span>
-
-        <OrderStatusTimeline status={order.status} orderType={order.orderType} />
+        {(() => {
+          const isCanceled = order.status === "CANCELLED" || order.status === "CANCELED";
+          const isRefusedFinal = isCanceled && !!order.lastCourierRefusedAt;
+          const isSearchingCourier = order.status === "PENDING" && !!order.lastCourierRefusedAt;
+          const label =
+            isRefusedFinal
+              ? "Refuzată"
+              : isSearchingCourier
+                ? "Căutăm curier"
+                : (order.orderType === "package_delivery" ? PACKAGE_ORDER_STATUS_LABEL : ORDER_STATUS_LABEL)[order.status] ??
+                  order.status;
+          const chipClass = isSearchingCourier
+            ? "bg-amber-500/25 text-amber-300"
+            : getOrderStatusClass(order.status);
+          return (
+            <>
+              <span className={`mt-2 inline-block rounded-full px-3 py-1 text-sm font-semibold ${chipClass}`}>
+                {label}
+              </span>
+              <OrderStatusTimeline
+                status={order.status}
+                orderType={order.orderType}
+                isRefused={isRefusedFinal}
+                isSearchingCourier={isSearchingCourier}
+              />
+            </>
+          );
+        })()}
 
         {order.orderType === "package_delivery" && (
           <div className="mt-4 rounded-2xl border border-white/20 bg-white/5 p-4">

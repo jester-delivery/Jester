@@ -62,8 +62,9 @@ export function useOrderStream(
               if (event === "status_changed" && data) {
                 try {
                   const payload = JSON.parse(data) as { status?: string; order?: unknown; reason?: string };
-                  if (payload && payload.status !== undefined) {
-                    onStatusRef.current(payload.status, payload);
+                  // Notifică și când există doar reason (ex: courier_refused) ca să nu pierdem notificarea
+                  if (payload && (payload.status !== undefined || payload.reason !== undefined)) {
+                    onStatusRef.current(payload.status ?? "", payload);
                   }
                 } catch (_) {}
               }

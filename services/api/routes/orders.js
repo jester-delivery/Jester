@@ -28,11 +28,22 @@ router.get('/my', authenticateToken, async (req, res) => {
 
     const orders = await prisma.cartOrder.findMany({
       where,
-      include: { items: true },
+      include: {
+        items: true,
+        courierRejections: { orderBy: { rejectedAt: 'desc' }, take: 1, select: { rejectedAt: true, reason: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
-    res.json({ orders });
+    const ordersWithRefused = orders.map((o) => {
+      const { courierRejections, ...rest } = o;
+      const last = courierRejections?.[0];
+      const lastCourierRefusedAt = last?.rejectedAt?.toISOString?.() ?? null;
+      const lastCourierRefusedReason = last?.reason ?? null;
+      return { ...rest, lastCourierRefusedAt, lastCourierRefusedReason };
+    });
+
+    res.json({ orders: ordersWithRefused });
   } catch (error) {
     console.error('Error fetching my orders:', error);
     res.status(500).json({
@@ -108,7 +119,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     const order = await prisma.cartOrder.findFirst({
       where: { id, userId, deletedAt: null },
-      include: { items: true },
+      include: {
+        items: true,
+        courierRejections: { orderBy: { rejectedAt: 'desc' }, take: 1, select: { rejectedAt: true, reason: true } },
+      },
     });
 
     if (!order) {
@@ -118,7 +132,11 @@ router.get('/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    res.json({ order });
+    const { courierRejections, ...rest } = order;
+    const last = courierRejections?.[0];
+    const lastCourierRefusedAt = last?.rejectedAt?.toISOString?.() ?? null;
+    const lastCourierRefusedReason = last?.reason ?? null;
+    res.json({ order: { ...rest, lastCourierRefusedAt, lastCourierRefusedReason } });
   } catch (error) {
     console.error('Error fetching order:', error);
     res.status(500).json({

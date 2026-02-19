@@ -115,17 +115,31 @@ const updateOrderStatusSchema = z.object({
 
 /**
  * Schema PATCH /admin/products/:id – CRUD complet: name, description, price, image, categorySlug, isActive, available, sortOrder, stock
+ * Validare: price > 0 când e prezent, name required (min 1) când e prezent.
  */
 const updateProductSchema = z.object({
   name: z.string().min(1, 'Numele este obligatoriu').max(200).optional(),
   description: z.string().max(2000).optional().nullable(),
-  price: z.number().nonnegative('Prețul trebuie >= 0').max(99999.99).optional(),
+  price: z.number().positive('Prețul trebuie > 0').max(99999.99).optional(),
   image: z.string().url('URL imagine invalid').max(500).optional().nullable(),
   categorySlug: z.string().min(1).max(100).optional(),
   isActive: z.boolean().optional(),
   available: z.boolean().optional(),
   sortOrder: z.number().int().optional().nullable(),
   stock: z.number().int().min(0).optional().nullable(),
+}).refine((d) => Object.keys(d).length > 0, {
+  message: 'Cel puțin un câmp este necesar',
+});
+
+/**
+ * Schema PATCH /admin/categories/:id – title, description, image/icon, isActive, sortOrder
+ */
+const updateCategorySchema = z.object({
+  name: z.string().min(1, 'Titlul este obligatoriu').max(200).optional(),
+  description: z.string().max(2000).optional().nullable(),
+  image: z.string().url('URL invalid').max(500).optional().nullable(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().optional().nullable(),
 }).refine((d) => Object.keys(d).length > 0, {
   message: 'Cel puțin un câmp este necesar',
 });
@@ -164,6 +178,7 @@ module.exports = {
   createMvpOrderSchema,
   updateOrderStatusSchema,
   updateProductSchema,
+  updateCategorySchema,
   updateMeSchema,
   createAddressSchema,
   updateAddressSchema,

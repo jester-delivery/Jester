@@ -5,14 +5,20 @@ const router = express.Router();
 
 /**
  * GET /categories
- * Returnează lista categoriilor. ?includeProducts=1 = include produse active (pentru catalog client)
+ * ?includeProducts=1 = include produse active (pentru catalog client)
+ * ?activeOnly=1 = doar categorii isActive (pentru hub/bule) – sortate după sortOrder apoi name
  */
 router.get('/', async (req, res) => {
   try {
     const includeProducts = req.query.includeProducts === '1';
+    const activeOnly = req.query.activeOnly === '1' || req.query.activeOnly === 'true';
+
+    const where = {};
+    if (activeOnly) where.isActive = true;
 
     const categories = await prisma.category.findMany({
-      orderBy: { name: 'asc' },
+      where,
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       include: includeProducts
         ? {
             products: {

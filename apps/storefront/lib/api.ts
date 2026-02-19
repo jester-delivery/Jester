@@ -40,6 +40,10 @@ export type Order = {
   createdAt: string;
   assignedCourierId?: string | null;
   courierAcceptedAt?: string | null;
+  /** Când un curier a refuzat (ISO string); clientul vede „Căutăm curier” */
+  lastCourierRefusedAt?: string | null;
+  /** Motivul ultimului refuz (pentru client) */
+  lastCourierRefusedReason?: string | null;
   items: OrderItem[];
 };
 
@@ -57,6 +61,17 @@ export type AdminProduct = {
   stock?: number | null;
   category?: { id: string; name: string; slug: string };
   restaurant?: { id: string; name: string };
+};
+
+export type AdminCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  image?: string | null;
+  isActive: boolean;
+  sortOrder?: number | null;
+  _count?: { products: number };
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -142,10 +157,10 @@ export const api = {
     getById: (id: string) => apiClient.get(`/products/${id}`),
   },
   
-  // Categories (includeProducts=1 pentru catalog cu produse active + isAvailable)
+  // Categories (includeProducts=1 catalog; activeOnly=1 doar active pentru hub)
   categories: {
-    getAll: (params?: { includeProducts?: "1" }) =>
-      apiClient.get<{ categories: Array<{ id: string; name: string; slug: string; products?: Array<{ id: string; name: string; price: string; image?: string | null; isAvailable: boolean; categoryId: string }> }> }>('/categories', { params }),
+    getAll: (params?: { includeProducts?: "1"; activeOnly?: "1" }) =>
+      apiClient.get<{ categories: Array<{ id: string; name: string; slug: string; image?: string | null; sortOrder?: number | null; products?: Array<{ id: string; name: string; price: string; image?: string | null; isAvailable: boolean; categoryId: string }> }> }>('/categories', { params }),
     getById: (id: string) => apiClient.get(`/categories/${id}`),
   },
   
@@ -168,11 +183,28 @@ export const api = {
     delete: (id: string) => apiClient.delete(`/orders/${id}`),
   },
 
+  // Notificări (lista pentru /notificati, exclude dismissed; dismiss prin swipe)
+  notifications: {
+    getList: (params?: { signal?: AbortSignal }) =>
+      apiClient.get<{ orders: Order[] }>('/notifications', { signal: params?.signal }),
+    dismiss: (orderId: string) => apiClient.post('/notifications/dismiss', { orderId }),
+  },
+
   // Admin (protejat: auth + ADMIN_EMAILS în .env)
   admin: {
     getOrders: () => apiClient.get<{ orders: Order[] }>('/admin/orders'),
-    getProducts: (params?: { category?: string }) =>
+    getProducts: (params?: { category?: string; search?: string; isActive?: string; available?: string }) =>
       apiClient.get<{ products: AdminProduct[] }>('/admin/products', { params }),
+    getCategories: () =>
+      apiClient.get<{ categories: AdminCategory[] }>('/admin/categories'),
+    updateCategory: (id: string, data: {
+      name?: string;
+      description?: string | null;
+      image?: string | null;
+      isActive?: boolean;
+      sortOrder?: number | null;
+    }) =>
+      apiClient.patch<{ category: AdminCategory }>(`/admin/categories/${id}`, data),
     updateProduct: (id: string, data: {
       name?: string;
       description?: string | null;

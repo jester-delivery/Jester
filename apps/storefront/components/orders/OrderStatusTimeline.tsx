@@ -31,9 +31,9 @@ function stepIndexPackage(status: string): number {
   return i >= 0 ? i : -1;
 }
 
-type Props = { status: string; orderType?: "product_order" | "package_delivery" };
+type Props = { status: string; orderType?: "product_order" | "package_delivery"; isRefused?: boolean; isSearchingCourier?: boolean };
 
-export default function OrderStatusTimeline({ status, orderType }: Props) {
+export default function OrderStatusTimeline({ status, orderType, isRefused, isSearchingCourier }: Props) {
   const isPackage = orderType === "package_delivery";
   const STEPS = isPackage ? STEPS_PACKAGE : STEPS_FOOD;
   const currentIdx = isPackage ? stepIndexPackage(status) : stepIndexFood(status);
@@ -43,8 +43,11 @@ export default function OrderStatusTimeline({ status, orderType }: Props) {
     <div className="mt-6 rounded-2xl border border-white/20 bg-white/5 p-4">
       <p className="mb-4 text-sm font-semibold text-white/80">Status comandă</p>
       {canceled ? (
-        <p className="text-red-300">Comanda a fost anulată.</p>
+        <p className="text-red-300">
+          {isRefused ? "Comanda a fost refuzată." : "Comanda a fost anulată."}
+        </p>
       ) : (
+        <>
         <div className="relative flex">
           {/* linie de fundal */}
           <div className="absolute left-4 right-4 top-5 h-0.5 bg-white/20" />
@@ -75,10 +78,14 @@ export default function OrderStatusTimeline({ status, orderType }: Props) {
                 >
                   {step.label}
                 </span>
-              </div>
-            );
-          })}
+            </div>
+          );
+        })}
         </div>
+        {isSearchingCourier && (
+          <p className="mt-3 text-sm text-amber-300">Un curier a refuzat. Căutăm alt curier.</p>
+        )}
+        </>
       )}
     </div>
   );

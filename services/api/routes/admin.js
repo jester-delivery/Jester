@@ -2,7 +2,7 @@ const express = require('express');
 const prisma = require('../utils/prisma');
 const authenticateToken = require('../middleware/authenticateToken');
 const requireAdmin = require('../middleware/requireAdmin');
-const { validate, updateProductSchema } = require('../utils/validation');
+const { validate, updateProductSchema, updateCategorySchema } = require('../utils/validation');
 
 const router = express.Router();
 
@@ -32,12 +32,13 @@ router.get('/orders', async (req, res) => {
 
 /**
  * GET /admin/products
- * Lista tuturor produselor (inclusiv inactive) – pentru cockpit Admin
+ * Lista produselor cu: search (nume), category, isActive, available. Sortare: sortOrder apoi name.
  */
 router.get('/products', async (req, res) => {
   try {
-    const { category: categorySlugOrId } = req.query;
+    const { category: categorySlugOrId, search, isActive, available } = req.query;
     const where = {};
+
     if (categorySlugOrId) {
       const cat = await prisma.category.findFirst({
         where: {
@@ -46,6 +47,13 @@ router.get('/products', async (req, res) => {
       });
       if (cat) where.categoryId = cat.id;
     }
+    if (search != null && String(search).trim() !== '') {
+      where.name = { contains: String(search).trim(), mode: 'insensitive' };
+    }
+    if (isActive === 'true' || isActive === '1') where.isActive = true;
+    if (isActive === 'false' || isActive === '0') where.isActive = false;
+    if (available === 'true' || available === '1') where.available = true;
+    if (available === 'false' || available === '0') where.available = false;
 
     const products = await prisma.product.findMany({
       where,
@@ -58,9 +66,8 @@ router.get('/products', async (req, res) => {
         },
       },
       orderBy: [
-        { categoryId: 'asc' },
         { sortOrder: 'asc' },
-        { createdAt: 'desc' },
+        { name: 'asc' },
       ],
     });
     res.json({ products });
@@ -177,7 +184,7 @@ router.post('/products/bulk-deactivate', async (req, res) => {
 
 /**
  * GET /admin/stats/today
- * Agregare: total comenzi azi, total livrate azi, total valoare livrată azi
+ * Agregare: total comenzi azi, total livrate azi (din OrderStatusLog), total valoare livrată azi
  */
 router.get('/stats/today', async (req, res) => {
   try {
@@ -185,25 +192,33 @@ router.get('/stats/today', async (req, res) => {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-    const [totalOrdersToday, deliveredToday] = await Promise.all([
+    const [totalOrdersToday, deliveredLogsToday] = await Promise.all([
       prisma.cartOrder.count({
         where: {
           createdAt: { gte: startOfToday, lte: endOfToday },
           deletedAt: null,
         },
       }),
-      prisma.cartOrder.findMany({
+      prisma.orderStatusLog.findMany({
         where: {
-          status: 'DELIVERED',
-          updatedAt: { gte: startOfToday, lte: endOfToday },
-          deletedAt: null,
+          newStatus: 'DELIVERED',
+          createdAt: { gte: startOfToday, lte: endOfToday },
         },
-        select: { total: true },
+        select: { orderId: true },
       }),
     ]);
 
-    const totalDeliveredToday = deliveredToday.length;
-    const totalValueDeliveredToday = deliveredToday.reduce((sum, o) => sum + Number(o.total), 0);
+    const deliveredOrderIds = [...new Set(deliveredLogsToday.map((l) => l.orderId))];
+    const totalDeliveredToday = deliveredOrderIds.length;
+
+    let totalValueDeliveredToday = 0;
+    if (deliveredOrderIds.length > 0) {
+      const orders = await prisma.cartOrder.findMany({
+        where: { id: { in: deliveredOrderIds }, status: 'DELIVERED', deletedAt: null },
+        select: { total: true },
+      });
+      totalValueDeliveredToday = orders.reduce((sum, o) => sum + Number(o.total), 0);
+    }
 
     res.json({
       totalOrdersToday,
@@ -215,6 +230,65 @@ router.get('/stats/today', async (req, res) => {
     res.status(500).json({
       error: 'Eroare la statistici',
       code: 'ADMIN_STATS_ERROR',
+    });
+  }
+});
+
+/**
+ * GET /admin/categories
+ * Lista tuturor categoriilor (inclusiv inactive) – pentru Categories Manager
+ */
+router.get('/categories', async (req, res) => {
+  try {
+    const categories = await prisma.category.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      include: { _count: { select: { products: true } } },
+    });
+    res.json({ categories });
+  } catch (error) {
+    console.error('Error fetching admin categories:', error);
+    res.status(500).json({
+      error: 'Eroare la obținerea categoriilor',
+      code: 'FETCH_ADMIN_CATEGORIES_ERROR',
+    });
+  }
+});
+
+/**
+ * PATCH /admin/categories/:id
+ * Edit: name (title), description, image (icon), isActive, sortOrder
+ */
+router.patch('/categories/:id', validate(updateCategorySchema), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, image, isActive, sortOrder } = req.body;
+
+    const category = await prisma.category.findUnique({ where: { id } });
+    if (!category) {
+      return res.status(404).json({
+        error: 'Categorie negăsită',
+        code: 'CATEGORY_NOT_FOUND',
+      });
+    }
+
+    const data = {};
+    if (name !== undefined) data.name = name;
+    if (description !== undefined) data.description = description;
+    if (image !== undefined) data.image = image;
+    if (isActive !== undefined) data.isActive = isActive;
+    if (sortOrder !== undefined) data.sortOrder = sortOrder;
+
+    const updated = await prisma.category.update({
+      where: { id },
+      data,
+      include: { _count: { select: { products: true } } },
+    });
+    res.json({ category: updated });
+  } catch (error) {
+    console.error('Error updating category:', error);
+    res.status(500).json({
+      error: 'Eroare la actualizarea categoriei',
+      code: 'UPDATE_CATEGORY_ERROR',
     });
   }
 });

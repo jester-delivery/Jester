@@ -60,7 +60,10 @@ export const useJester24CartStore = create<Jester24CartState>()(
       dec: (id) => {
         set((state) => {
           const item = state.items.find((i) => i.id === id);
-          if (!item || item.qty <= 1) return state;
+          if (!item) return state;
+          if (item.qty <= 1) {
+            return { items: state.items.filter((i) => i.id !== id) };
+          }
           return {
             items: state.items.map((i) =>
               i.id === id ? { ...i, qty: i.qty - 1 } : i

@@ -16,6 +16,9 @@
 - **Checkout:** selector adrese din Address Book, prefill nume/telefon, validări RO phone
 - **Status flow:** PENDING → CONFIRMED → PREPARING → ON_THE_WAY → DELIVERED, CANCELED doar din PENDING/CONFIRMED
 - **Admin:** GET /admin/orders (protejat), PATCH /orders/:id/status cu ETA + internalNotes
+- **Admin Products Manager (TASK 5):** GET /admin/products cu search, category, isActive, available; sortare sortOrder + name; PATCH produs (name, price, image, category, isActive, available, sortOrder); validare price > 0, name required; UI: listă cu search + filtre, edit form cu sortOrder, quick toggles isActive/available
+- **Admin Categories Manager (TASK 6):** Category: description, isActive, sortOrder; GET /categories?activeOnly=1; GET/PATCH /admin/categories; UI: listă categorii (slug, titlu, isActive, sortOrder), edit (titlu, descriere, icon, isActive, sortOrder), quick toggle isActive
+- **BubbleHub din API:** hub-ul citește GET /categories?activeOnly=1; doar categorii active, sortate; categorie OFF dispare din hub; la refresh clientul vede ordinea din admin
 - **Real-time Order Status:** SSE GET /orders/stream/:orderId – update instant când admin schimbă status, toast „Comanda ta e în drum”
 - **Notificări client:** SSE pe order detail (înlocuie polling), polling 8s pe lista Orders, toast + vibrație, badge „Comandă live”
 - **Hardening:** validări Zod (adresă min 5, telefon RO, nume min 2), admin doar pentru ADMIN_EMAILS

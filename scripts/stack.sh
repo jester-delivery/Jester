@@ -28,6 +28,9 @@ cmd_start() {
   echo "  Prisma generate + db push..."
   (cd "$ROOT/services/api" && npx prisma generate && npx prisma db push) || { echo "  Eroare Prisma."; exit 1; }
 
+  echo "  Seed (dacă DB goală)..."
+  (cd "$ROOT/services/api" && node scripts/seed-if-empty.js) || true
+
   (cd "$ROOT/services/api" && npm run dev) &
   (cd "$ROOT/apps/storefront" && npm run dev) &
   sleep 6

@@ -8,9 +8,9 @@ import { useAuthReady } from "@/hooks/useAuthReady";
 import { api, type Address } from "@/lib/api";
 import { PACKAGE_DELIVERY_FEE } from "@/lib/config/delivery";
 import Toast from "@/components/ui/Toast";
+import { DELIVERY_REQUEST_TOAST, TOAST_DURATION_MS } from "@/lib/jesterToasts";
 
 const MAX_WEIGHT_KG = 20;
-const TOAST_DURATION_MS = 3000;
 
 type ServiceType = "trimite" | "primeste";
 type AddressSource = "saved" | "custom";
@@ -323,7 +323,7 @@ export default function DeliveryPage() {
         },
         { idempotencyKey: idempotencyKeyRef.current }
       );
-      showToast("Solicitarea ta a fost trimisă");
+      showToast(DELIVERY_REQUEST_TOAST);
       router.push("/orders");
     } catch (err: unknown) {
       const res = (err as { response?: { data?: { error?: string; code?: string }; status?: number } })?.response;

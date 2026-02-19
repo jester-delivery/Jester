@@ -45,7 +45,7 @@ export default function Jester2424Page() {
   }, [items.length, router]);
 
   return (
-    <main className="min-h-screen text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24">
+    <main className="min-h-screen overflow-x-hidden text-white bg-gradient-to-b from-[#050610] via-[#040411] to-[#050610] pb-24">
       <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-[#050610]/90 backdrop-blur-md safe-area-inset-top">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 pt-4 pb-4">
           <div className="min-w-0 flex-1">
@@ -70,7 +70,7 @@ export default function Jester2424Page() {
             <h2 className="text-lg font-semibold text-white/90 mb-3 border-b border-white/10 pb-2">
               {category.label}
             </h2>
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-4">
               {category.products.map((product) => (
                 <ProductRow
                   key={product.id}
