@@ -8,6 +8,7 @@ import Toast from "@/components/ui/Toast";
 import CartDrawer from "@/components/jester24/CartDrawer";
 import CartHeaderButton from "@/components/jester24/CartHeaderButton";
 import FlyToCart from "@/components/jester24/FlyToCart";
+import ImagePreviewModal from "@/components/jester24/ImagePreviewModal";
 import { useJester24CartStore } from "@/stores/jester24CartStore";
 import { JESTER24_CATEGORIES } from "@/lib/data/jester24-products";
 
@@ -20,6 +21,7 @@ export default function Jester2424Page() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [flyState, setFlyState] = useState<{ from: DOMRect; image: string } | null>(null);
   const [bounceTrigger, setBounceTrigger] = useState(0);
+  const [imagePreview, setImagePreview] = useState<{ imageUrl: string; title: string } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cartButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -85,6 +87,9 @@ export default function Jester2424Page() {
                   onAddWithFly={(fromRect, imageUrl) =>
                     setFlyState({ from: fromRect, image: imageUrl })
                   }
+                  onImagePreview={(imageUrl, title) =>
+                    setImagePreview({ imageUrl, title })
+                  }
                 />
               ))}
             </div>
@@ -109,6 +114,15 @@ export default function Jester2424Page() {
         onCheckout={redirectToCheckout}
         showToast={showToast}
       />
+      {imagePreview && (
+        <ImagePreviewModal
+          key={`${imagePreview.imageUrl}-${imagePreview.title}`}
+          open={!!imagePreview}
+          onClose={() => setImagePreview(null)}
+          imageUrl={imagePreview.imageUrl}
+          title={imagePreview.title}
+        />
+      )}
       <Toast message={toastMessage} />
       <Jester24BottomBarSwitcher onCheckoutClick={redirectToCheckout} />
     </main>

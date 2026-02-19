@@ -8,6 +8,7 @@ import Toast from "@/components/ui/Toast";
 import CartDrawer from "@/components/jester24/CartDrawer";
 import CartHeaderButton from "@/components/jester24/CartHeaderButton";
 import FlyToCart from "@/components/jester24/FlyToCart";
+import ImagePreviewModal from "@/components/jester24/ImagePreviewModal";
 import Jester24BottomBarSwitcher from "@/components/jester24/Jester24BottomBarSwitcher";
 import { useCategory } from "@/lib/useCategory";
 import { useJester24CartStore } from "@/stores/jester24CartStore";
@@ -24,6 +25,7 @@ export default function SupplyPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [flyState, setFlyState] = useState<{ from: DOMRect; image: string } | null>(null);
   const [bounceTrigger, setBounceTrigger] = useState(0);
+  const [imagePreview, setImagePreview] = useState<{ imageUrl: string; title: string } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cartButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -99,6 +101,7 @@ export default function SupplyPage() {
                 isAvailable={product.isAvailable}
                 showToast={showToast}
                 onAddWithFly={(fromRect, imageUrl) => setFlyState({ from: fromRect, image: imageUrl })}
+                onImagePreview={(imageUrl, title) => setImagePreview({ imageUrl, title })}
               />
             ))}
           </div>
@@ -122,6 +125,15 @@ export default function SupplyPage() {
         onCheckout={redirectToCheckout}
         showToast={showToast}
       />
+      {imagePreview && (
+        <ImagePreviewModal
+          key={`${imagePreview.imageUrl}-${imagePreview.title}`}
+          open={!!imagePreview}
+          onClose={() => setImagePreview(null)}
+          imageUrl={imagePreview.imageUrl}
+          title={imagePreview.title}
+        />
+      )}
       <Toast message={toastMessage} />
       <Jester24BottomBarSwitcher onCheckoutClick={redirectToCheckout} />
     </main>

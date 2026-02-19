@@ -20,6 +20,8 @@ type ProductRowProps = {
   showToast?: (msg: string) => void;
   /** Callback when adding to cart: (fromRect, imageUrl) for fly-to-cart animation */
   onAddWithFly?: (fromRect: DOMRect, imageUrl: string) => void;
+  /** When provided (e.g. Jester 24/24), tap on image opens premium preview instead of adding to cart */
+  onImagePreview?: (image: string, name: string) => void;
 };
 
 /**
@@ -38,6 +40,7 @@ export default function ProductRow({
   section,
   showToast,
   onAddWithFly,
+  onImagePreview,
 }: ProductRowProps) {
   const addItem = useJester24CartStore((s) => s.addItem);
   const inc = useJester24CartStore((s) => s.inc);
@@ -96,38 +99,20 @@ export default function ProductRow({
     showToast?.(CART_QUANTITY_TOAST);
   };
 
-  const handleRowClick = (e?: React.MouseEvent) => {
-    if (!id || !section || !isAvailable) return;
-    if (!isInCart) {
-      addItem({ id, name, price, image, section });
-      triggerAddFeedback();
-      showToast?.(CART_ADD_TOAST);
-      if (e) {
-        const target = (e.target as HTMLElement).closest("[role=button]") ?? (e.currentTarget as HTMLElement);
-        const rect = target.getBoundingClientRect();
-        onAddWithFly?.(rect, image);
-      }
+  const isCartEnabled = Boolean(id && section && isAvailable);
+
+  const handleImageClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (onImagePreview) {
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(30);
+      onImagePreview(image, name);
     }
   };
 
-  const isCartEnabled = Boolean(id && section && isAvailable);
-
   return (
     <div
-      role={isCartEnabled ? "button" : undefined}
-      tabIndex={isCartEnabled ? 0 : undefined}
-      onClick={isCartEnabled ? (e) => handleRowClick(e) : undefined}
-      onKeyDown={
-        isCartEnabled
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                handleRowClick();
-              }
-            }
-          : undefined
-      }
-      className={`group relative flex w-full overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md transition-all duration-200 ${isCartEnabled ? "cursor-pointer hover:border-white/30 hover:bg-white/15" : "cursor-default opacity-80"}`}
+      className={`group relative flex w-full overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md transition-all duration-200 ${isCartEnabled ? "hover:border-white/25 hover:bg-white/10" : "cursor-default opacity-80"}`}
     >
       {/* Indisponibil badge */}
       {id && section && !isAvailable && (
@@ -142,14 +127,20 @@ export default function ProductRow({
         </div>
       )}
 
-      {/* Imagine stânga */}
-      <div className="relative h-24 w-24 shrink-0 sm:h-28 sm:w-28">
+      {/* Imagine stânga – click doar pentru preview (Jester 24/24), nu adaugă în coș */}
+      <div
+        className={`relative h-24 w-24 shrink-0 sm:h-28 sm:w-28 overflow-hidden rounded-l-2xl ${onImagePreview ? "cursor-pointer" : ""}`}
+        onClick={onImagePreview ? handleImageClick : undefined}
+        role={onImagePreview ? "button" : undefined}
+        aria-label={onImagePreview ? `Mărește imaginea: ${name}` : undefined}
+      >
         <Image
           src={image}
           alt={name}
           fill
-          className="object-cover transition-transform duration-300 group-hover:scale-105"
+          className={`object-cover transition-transform duration-300 ${onImagePreview ? "active:scale-95 group-hover:scale-105 group-hover:shadow-[0_0_20px_rgba(255,255,255,0.12)]" : "group-hover:scale-105"}`}
           sizes="112px"
+          unoptimized={image.startsWith("/api/")}
         />
       </div>
 
