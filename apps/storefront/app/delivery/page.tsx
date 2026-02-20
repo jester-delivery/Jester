@@ -363,7 +363,7 @@ export default function DeliveryPage() {
 
         <div className="mt-6 rounded-2xl border border-white/20 bg-white/5 p-5">
           <h1 className="text-2xl font-bold sm:text-3xl">Jester Delivery</h1>
-          <p className="mt-2 text-white/80">Livrare locală Sulina + peste Dunăre.</p>
+          <p className="mt-2 text-white/80">Livrare locală Sulina.</p>
           <p className="mt-1 text-sm text-amber-300/90">
             Tarif fix: {PACKAGE_DELIVERY_FEE} lei / până la {MAX_WEIGHT_KG} kg
           </p>
@@ -630,7 +630,7 @@ export default function DeliveryPage() {
 
           <div className="rounded-xl border border-white/20 bg-white/5 p-4">
             <p className="text-lg font-bold text-white">Tarif transport: {PACKAGE_DELIVERY_FEE} lei (până la {MAX_WEIGHT_KG} kg)</p>
-            <p className="mt-1 text-xs text-white/60">TVA inclus (informativ). Livrare locală Sulina + peste Dunăre.</p>
+            <p className="mt-1 text-xs text-white/60">TVA inclus (informativ). Livrare locală Sulina.</p>
             <p className="mt-2 text-base font-semibold text-white">Total: {PACKAGE_DELIVERY_FEE} lei</p>
           </div>
 

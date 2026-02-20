@@ -25,8 +25,6 @@ function NotificationsContent() {
   const [loading, setLoading] = useState(true);
 
   const [removingId, setRemovingId] = useState<string | null>(null);
-  /** ID-uri ascunse în această sesiune; la fallback (getMy) le filtrăm ca să nu reapără */
-  const dismissedIdsRef = useRef<Set<string>>(new Set());
 
   const fetchNotifications = useCallback(() => {
     if (!user) return;
@@ -37,30 +35,15 @@ function NotificationsContent() {
         setOrders(list);
         const finalIds = list.filter((o) => isFinalOrderStatus(o.status)).map((o) => o.id);
         if (finalIds.length) clearSeenForFinalOrders(finalIds);
-        setLoading(false);
       })
-      .catch(() => {
-        api.orders
-          .getMy()
-          .then((res) => {
-            const list = res.data.orders ?? [];
-            const filtered = list.filter((o) => !dismissedIdsRef.current.has(o.id));
-            setOrders(filtered);
-            const finalIds = list.filter((o) => isFinalOrderStatus(o.status)).map((o) => o.id);
-            if (finalIds.length) clearSeenForFinalOrders(finalIds);
-          })
-          .catch(() => setOrders([]))
-          .finally(() => setLoading(false));
-      });
+      .catch(() => setOrders([]))
+      .finally(() => setLoading(false));
   }, [user]);
 
   const handleSwipeDelete = useCallback((orderId: string) => {
-    dismissedIdsRef.current.add(orderId);
     setRemovingId(orderId);
-    setTimeout(() => {
-      setOrders((prev) => prev.filter((o) => o.id !== orderId));
-      setRemovingId(null);
-    }, 350);
+    setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    setTimeout(() => setRemovingId(null), 350);
     api.notifications.dismiss(orderId).catch(() => {
       fetchNotifications();
     });
@@ -122,9 +105,11 @@ function NotificationsContent() {
             <h1 className="text-xl font-semibold">Notificări</h1>
             <p className="text-white/60 text-sm">Status comenzi</p>
           </div>
-          <span className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-amber-500/80 px-2 text-xs font-semibold text-black">
-            {unreadCount > 99 ? "99+" : unreadCount}
-          </span>
+          {unreadCount >= 1 && (
+            <span className="flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-amber-500/80 px-2 text-xs font-semibold text-black">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
         </div>
 
         {loading ? (

@@ -105,23 +105,46 @@ export default function CheckoutPage() {
     }
   }, [mounted, authReady, isAuthenticated, user, router]);
 
-  // Autocomplete adrese Sulina: la tastare, cerem sugestii din listă
+  // Autocomplete: străzi la căutare; după alegerea străzii, sugestii de numere (clientul poate alege sau completa manual)
+  const isStreetOnly = (v: string) => {
+    const t = v.trim();
+    return t.length >= 5 && (/(Str\.|Aleea)\s+.+,\s*Sulina\s*$/i.test(t)) && !/\bnr\.\s*\d+/i.test(t);
+  };
   useEffect(() => {
     const q = address.trim();
-    if (!q || q.length < 2) {
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (!q) {
+      api.addresses
+        .list()
+        .then((res) => {
+          setAddressSuggestions(res.data.suggestions ?? []);
+        })
+        .catch(() => setAddressSuggestions([]));
+      return;
+    }
+    if (q.length < 2) {
       setAddressSuggestions([]);
       setShowAddressSuggestions(false);
       return;
     }
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     searchTimeoutRef.current = setTimeout(() => {
-      api.addresses
-        .search(q)
-        .then((res) => {
-          setAddressSuggestions(res.data.suggestions ?? []);
-          setShowAddressSuggestions(true);
-        })
-        .catch(() => setAddressSuggestions([]));
+      if (isStreetOnly(q)) {
+        api.addresses
+          .streetNumbers(q)
+          .then((res) => {
+            setAddressSuggestions(res.data.suggestions ?? []);
+            setShowAddressSuggestions(true);
+          })
+          .catch(() => setAddressSuggestions([]));
+      } else {
+        api.addresses
+          .search(q)
+          .then((res) => {
+            setAddressSuggestions(res.data.suggestions ?? []);
+            setShowAddressSuggestions(true);
+          })
+          .catch(() => setAddressSuggestions([]));
+      }
     }, 200);
     return () => {
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
@@ -152,7 +175,7 @@ export default function CheckoutPage() {
       e.cart = "Total invalid. Verifică coșul și încearcă din nou.";
     }
     if (!addr || addr.length < 5) {
-      e.address = "Adresa de livrare este obligatorie. Alege o adresă din listă (Sulina).";
+      e.address = "Adresa de livrare este obligatorie. Introdu o adresă din Sulina sau alege din listă.";
     }
     if (!ph || ph.length < 8) {
       e.phone = "Telefonul este obligatoriu (min. 8 caractere).";
@@ -329,7 +352,7 @@ export default function CheckoutPage() {
                   type="text"
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  onFocus={() => address.trim().length >= 2 && setShowAddressSuggestions(true)}
+                  onFocus={() => setShowAddressSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowAddressSuggestions(false), 150)}
                   placeholder="Scrie adresa (ex: Str. 1 Decembrie) și alege din listă"
                   className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-white placeholder:text-white/40 focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/40"
@@ -337,7 +360,7 @@ export default function CheckoutPage() {
                   minLength={5}
                   autoComplete="off"
                 />
-                <p className="mt-1 text-xs text-white/50">Livrăm doar în Sulina. Alege o adresă din listă.</p>
+                <p className="mt-1 text-xs text-white/50">Livrăm doar în Sulina. Poți alege din listă sau introduce o adresă nouă (ex: Str. 2 nr. 5, Sulina).</p>
                 {showAddressSuggestions && addressSuggestions.length > 0 && (
                   <ul
                     className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-white/20 bg-[#0a0a12] shadow-xl"

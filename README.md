@@ -188,7 +188,14 @@ Toate rutele de mai sus sunt prefixate de base URL (ex. `http://localhost:4000`)
 
 ---
 
-## 9. Roadmap scurt
+## 9. Implementări recente
+
+- **Rate limiting (429 – Prea multe cereri):** Limitele sunt **per client (IP)**; fluxul total este nelimitat (fiecare IP are propriul contor). La răspuns 429, utilizatorul (client sau curier) **nu mai este delogat**: token-ul rămâne, se afișează doar mesajul de eroare; după ce fereastra de limită se resetează, totul revine normal. (authStore: `fetchUser` nu șterge token la 429; interceptor API nu face logout la 429; pagini courier afișează mesaj 429 fără redirect la login.)
+- **Preview imagini (Jester 24/24):** Tap pe imaginea produsului deschide un modal lightbox (Radix Dialog); ProductRow: doar butoanele +/− adaugă în coș, tap pe imagine pentru preview.
+
+---
+
+## 10. Roadmap scurt
 
 - Polish UI (storefront, admin, courier).
 - Notificări (email push, eventual in-app).

@@ -25,18 +25,31 @@ export default function SearchBar() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const isStreetOnly = useCallback((v: string) => {
+    const t = v.trim();
+    return (/(Str\.|Aleea)\s+.+,\s*Sulina\s*$/i.test(t)) && !/\bnr\.\s*\d+/i.test(t);
+  }, []);
+
   const fetchSuggestions = useCallback(async (q: string) => {
     setLoading(true);
     try {
-      const res = await api.addresses.search(q);
-      setSuggestions(res.data.suggestions ?? []);
+      if (isStreetOnly(q)) {
+        const res = await api.addresses.streetNumbers(q);
+        setSuggestions(res.data.suggestions ?? []);
+      } else if (!q.trim()) {
+        const res = await api.addresses.list();
+        setSuggestions(res.data.suggestions ?? []);
+      } else {
+        const res = await api.addresses.search(q);
+        setSuggestions(res.data.suggestions ?? []);
+      }
       setOpen(true);
     } catch {
       setSuggestions([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isStreetOnly]);
 
   useEffect(() => {
     setInputValue(address);
@@ -118,7 +131,11 @@ export default function SearchBar() {
             type="text"
             value={inputValue}
             onChange={handleInputChange}
-            onFocus={() => inputValue.trim() && suggestions.length > 0 && setOpen(true)}
+            onFocus={() => {
+              const v = inputValue.trim();
+              if (v) fetchSuggestions(v);
+              else fetchSuggestions("");
+            }}
             onBlur={handleBlur}
             placeholder="Introdu adresa ta de livrare"
             className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-white/50 font-medium min-w-0"
@@ -150,7 +167,10 @@ export default function SearchBar() {
               <li key={s} role="option">
                 <button
                   type="button"
-                  onClick={() => handleSelect(s)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelect(s);
+                  }}
                   className="w-full px-4 py-3 text-left text-sm text-white hover:bg-white/10 focus:bg-white/10 focus:outline-none border-b border-white/5 last:border-0"
                 >
                   {s}

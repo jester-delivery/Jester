@@ -101,6 +101,7 @@ export default function BakePage() {
                 isAvailable={product.isAvailable}
                 showToast={showToast}
                 onAddWithFly={(fromRect, imageUrl) => setFlyState({ from: fromRect, image: imageUrl })}
+                onImagePreview={(imageUrl, title) => setImagePreview({ imageUrl, title })}
               />
             ))}
           </div>

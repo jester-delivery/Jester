@@ -215,7 +215,7 @@ function OrdersPageContent() {
     }, TOAST_DURATION_MS);
   }, []);
 
-  const fetchOrders = useCallback(async (signal?: AbortSignal) => {
+  const fetchOrders = useCallback(async (signal?: AbortSignal, retryCount = 0) => {
     try {
       const res = await api.orders.getMy({ signal });
       const newOrders = res.data.orders ?? [];
@@ -242,6 +242,10 @@ function OrdersPageContent() {
       prevOrdersRef.current = newOrders;
     } catch (err: unknown) {
       if ((err as { name?: string })?.name === "AbortError") return;
+      if (retryCount < 1) {
+        setTimeout(() => fetchOrders(undefined, retryCount + 1), 2000);
+        return;
+      }
       setError("Nu s-au putut încărca comenzile.");
     } finally {
       setLoading(false);
@@ -275,7 +279,7 @@ function OrdersPageContent() {
     }
   }, [authReady, isAuthenticated, user, router]);
 
-  // Fetch inițial + polling; AbortController anulează request la unmount
+  // Fetch inițial + polling la 8s (fără orders în deps ca să nu retrighereze la fiecare update)
   useEffect(() => {
     if (!isAuthenticated || !user) return;
     const controller = new AbortController();
@@ -285,7 +289,7 @@ function OrdersPageContent() {
       fetchOrders(controller.signal);
     };
     run();
-    const pollMs = orders.some((o) => o.status === "PENDING") ? 5000 : 12000;
+    const pollMs = 8000;
     const interval = setInterval(run, pollMs);
     return () => {
       cancelled = true;
@@ -293,7 +297,7 @@ function OrdersPageContent() {
       clearInterval(interval);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
-  }, [isAuthenticated, user, fetchOrders, orders]);
+  }, [isAuthenticated, user, fetchOrders]);
 
   // Re-fetch la focus/visibility: după ce revii de pe order detail (SSE acolo), list-ul se actualizează
   useEffect(() => {

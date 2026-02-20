@@ -5,16 +5,17 @@ const authenticateToken = require('../middleware/authenticateToken');
 const requireAdmin = require('../middleware/requireAdmin');
 const { validate, createMvpOrderSchema, updateOrderStatusSchema } = require('../utils/validation');
 const { sendOrderConfirmationEmail } = require('../services/emailService');
-const { emitOrderStatus } = require('../utils/orderEvents');
+const { emitOrderStatus, emitNewOrderAvailable } = require('../utils/orderEvents');
 const { isValidSulinaAddress } = require('../data/sulinaAddresses');
 const { PRODUCT_DELIVERY_FEE, PACKAGE_DELIVERY_FEE } = require('../config/delivery');
 
 const router = express.Router();
 
+// Max 3 comenzi pe minut per IP (același cont/aceeași rețea); restul API rămâne 100/min per IP
 const cartOrderCreateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
-  message: { error: 'Prea multe comenzi. Încearcă din nou în câteva minute.', code: 'RATE_LIMIT' },
+  max: 3,
+  message: { error: 'Prea multe comenzi. Maxim 3 comenzi pe minut. Încearcă din nou în câteva minute.', code: 'RATE_LIMIT' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -137,7 +138,7 @@ router.post('/', cartOrderCreateLimiter, authenticateToken, validate(createMvpOr
     const deliveryAddr = deliveryAddress ? String(deliveryAddress).trim() : '';
     if (!isValidSulinaAddress(deliveryAddr)) {
       return res.status(400).json({
-        error: 'Momentan livrăm doar în Sulina. Alege o adresă din listă.',
+        error: 'Adresa nu este în Sulina sau e incompletă. Introdu o adresă din Sulina (ex: Str. 2 nr. 5, Sulina) sau alege din listă.',
         code: 'DELIVERY_ADDRESS_NOT_IN_SULINA',
       });
     }
@@ -183,6 +184,8 @@ router.post('/', cartOrderCreateLimiter, authenticateToken, validate(createMvpOr
     } catch (_) {
       // [email] failed already logged in emailService; 201 still returned
     }
+
+    emitNewOrderAvailable(order);
 
     res.status(201).json({ success: true, orderId: order.id });
   } catch (error) {

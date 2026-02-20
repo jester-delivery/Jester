@@ -25,7 +25,7 @@ export const JESTER24_CATEGORIES: Jester24Category[] = [
   {
     id: "snacks",
     slug: "snacks",
-    label: "Snacks",
+    label: "Gustări",
     image: CATEGORY_IMAGE,
     products: [
       { id: "s1", name: "Peperoni", price: 12, image: CATEGORY_IMAGE },

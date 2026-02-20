@@ -139,6 +139,13 @@ export const useAuthStore = create<AuthState>()(
             error: null,
           });
         } catch (error: any) {
+          const status = error.response?.status;
+          const code = error.response?.data?.code;
+          // La 429 (prea multe cereri) nu delogăm – păstrăm token și user
+          if (status === 429 || code === 'RATE_LIMIT') {
+            set({ isLoading: false });
+            return;
+          }
           // Token invalid sau expirat
           localStorage.removeItem('jester_token');
           localStorage.removeItem('jester_user');

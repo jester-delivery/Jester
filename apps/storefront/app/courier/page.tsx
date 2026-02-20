@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { useAuthReady } from "@/hooks/useAuthReady";
+import { useCourierAvailableStream } from "@/lib/useCourierAvailableStream";
 import { api, type Order } from "@/lib/api";
 import { playNewOrderSound } from "@/lib/courierNotificationSound";
 import BottomNavigation from "@/components/ui/BottomNavigation";
@@ -22,6 +23,11 @@ function formatDate(iso: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function getPaymentMethodLabel(pm: string | undefined): string {
+  if (pm === "CARD") return "Plată cu cardul";
+  return "Plată la livrare";
 }
 
 function OrderCard({
@@ -69,6 +75,9 @@ function OrderCard({
         )}
         <p className="mt-1 text-sm text-white/70">
           {itemsCount} produse · {total} lei
+        </p>
+        <p className="mt-1.5 text-sm font-medium text-green-400">
+          {getPaymentMethodLabel(order?.paymentMethod)}
         </p>
         {(statusLabel || isRefused) && (
           <span className={`inline-block mt-2 text-xs px-2 py-0.5 rounded ${isRefused ? "bg-red-500/20 text-red-300" : "bg-white/10 text-white/80"}`}>
@@ -149,7 +158,7 @@ function OrderCard({
 export default function CourierDashboardPage() {
   const router = useRouter();
   const authReady = useAuthReady();
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, user, token } = useAuthStore();
   const [tab, setTab] = useState<Tab>("available");
   const [available, setAvailable] = useState<Order[]>([]);
   const [mine, setMine] = useState<Order[]>([]);
@@ -167,10 +176,13 @@ export default function CourierDashboardPage() {
     user &&
     (user.role === "COURIER" || user.role === "ADMIN");
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (opts?: { silent?: boolean }) => {
     if (!canAccess) return;
-    setLoading(true);
-    setError(null);
+    const silent = opts?.silent === true;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const [avRes, mineRes, histRes, refusedRes] = await Promise.all([
         api.courier.getAvailable(),
@@ -185,7 +197,13 @@ export default function CourierDashboardPage() {
       setHistory(Array.isArray(histRes?.data?.orders) ? histRes.data.orders : []);
       setRefused(Array.isArray(refusedRes?.data?.orders) ? (refusedRes.data.orders as OrderWithRefused[]) : []);
     } catch (err: unknown) {
-      const status = (err as { response?: { status: number } })?.response?.status;
+      if (silent) return;
+      const status = (err as { response?: { status: number; data?: { error?: string } } })?.response?.status;
+      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      if (status === 429) {
+        setError(typeof apiError === 'string' ? apiError : "Prea multe cereri. Încearcă din nou mai târziu.");
+        return;
+      }
       if (status === 401) {
         setError("Sesiune expirată. Te rugăm să te reconectezi.");
         return;
@@ -196,7 +214,7 @@ export default function CourierDashboardPage() {
       }
       setError("Nu s-au putut încărca comenzile. Încearcă din nou.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [canAccess, router]);
 
@@ -224,6 +242,13 @@ export default function CourierDashboardPage() {
     }
   }, [canAccess]);
 
+  const streamEnabled = tab === "available" && !!canAccess && !!token;
+  const { connected: streamConnected } = useCourierAvailableStream(
+    token ?? null,
+    streamEnabled,
+    fetchAvailableOnly
+  );
+
   useEffect(() => {
     if (newOrderToastTimerRef.current) clearTimeout(newOrderToastTimerRef.current);
     return () => {
@@ -249,7 +274,8 @@ export default function CourierDashboardPage() {
   useEffect(() => {
     if (!canAccess || tab !== "available") return;
     fetchAvailableOnly();
-    const interval = setInterval(fetchAvailableOnly, 10000);
+    if (streamConnected) return;
+    const interval = setInterval(fetchAvailableOnly, 8000);
     const onVisibility = () => {
       if (document.visibilityState === "visible") fetchAvailableOnly();
     };
@@ -258,15 +284,24 @@ export default function CourierDashboardPage() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [canAccess, tab, fetchAvailableOnly]);
+  }, [canAccess, tab, fetchAvailableOnly, streamConnected]);
 
   const handleAccept = async (id: string) => {
     setActionId(id);
     setError(null);
+    const orderFromList = available.find((o) => o.id === id);
+    if (orderFromList) {
+      setAvailable((prev) => prev.filter((o) => o.id !== id));
+      setMine((prev) => [{ ...orderFromList, status: "ACCEPTED", assignedCourierId: user?.id ?? null }, ...prev]);
+    }
     try {
       await api.courier.accept(id);
-      await fetchAll();
+      fetchAll({ silent: true });
     } catch (err: unknown) {
+      if (orderFromList) {
+        setAvailable((prev) => [...prev, orderFromList].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+        setMine((prev) => prev.filter((o) => o.id !== id));
+      }
       const res = (err as { response?: { data?: { error?: string; code?: string }; status?: number } })?.response;
       const msg =
         res?.status === 409 && res?.data?.code === "ORDER_ALREADY_TAKEN"
@@ -281,9 +316,25 @@ export default function CourierDashboardPage() {
   const handleRefuse = async (id: string, reason?: string) => {
     setActionId(id);
     setError(null);
+    const orderFromList = available.find((o) => o.id === id);
+    if (orderFromList) {
+      setAvailable((prev) => prev.filter((o) => o.id !== id));
+      const refusedOrder: OrderWithRefused = {
+        ...orderFromList,
+        statusDisplay: "REFUSED",
+        refusedReason: reason ?? null,
+        rejectedAt: new Date().toISOString(),
+      };
+      setRefused((prev) => [refusedOrder, ...prev]);
+    }
     try {
       await api.courier.refuse(id, reason);
-      await fetchAll();
+      const refetch = () => fetchAll({ silent: true });
+      try {
+        await refetch();
+      } catch {
+        setTimeout(refetch, 2000);
+      }
       setNewOrderToast("Comandă refuzată.");
       if (newOrderToastTimerRef.current) clearTimeout(newOrderToastTimerRef.current);
       newOrderToastTimerRef.current = setTimeout(() => {
@@ -291,6 +342,10 @@ export default function CourierDashboardPage() {
         newOrderToastTimerRef.current = null;
       }, 4000);
     } catch (err: unknown) {
+      if (orderFromList) {
+        setAvailable((prev) => [...prev, orderFromList].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+        setRefused((prev) => prev.filter((o) => o.id !== id));
+      }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Eroare la refuz.";
       setError(msg);
     } finally {
@@ -304,10 +359,13 @@ export default function CourierDashboardPage() {
   ) => {
     setActionId(id);
     setError(null);
+    const prevMine = mine;
+    setMine((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
     try {
       await api.courier.setStatus(id, status);
-      await fetchAll();
+      fetchAll({ silent: true });
     } catch (err: unknown) {
+      setMine(prevMine);
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Eroare la actualizare status.";
       setError(msg);
     } finally {
@@ -383,10 +441,18 @@ export default function CourierDashboardPage() {
         {error && (
           <div className="mt-4 p-3 rounded-xl bg-red-500/20 border border-red-500/30 text-red-200 text-sm">
             <p>{error}</p>
-            {error.includes("Sesiune expirată") && (
+            {error.includes("Sesiune expirată") ? (
               <Link href="/login?next=%2Fcourier" className="mt-2 inline-block text-amber-300 underline">
                 Reconectează-te
               </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setError(null); fetchAll(); }}
+                className="mt-2 rounded-lg bg-white/15 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/25"
+              >
+                Reîncearcă
+              </button>
             )}
           </div>
         )}

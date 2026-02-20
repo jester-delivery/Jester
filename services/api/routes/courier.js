@@ -2,13 +2,51 @@ const express = require('express');
 const prisma = require('../utils/prisma');
 const authenticateToken = require('../middleware/authenticateToken');
 const requireCourier = require('../middleware/requireCourier');
-const { emitOrderStatus } = require('../utils/orderEvents');
+const { orderEvents, emitOrderStatus } = require('../utils/orderEvents');
 const { logOrderStatusChange } = require('../utils/orderStatusLog');
 
 const router = express.Router();
 
 router.use(authenticateToken);
 router.use(requireCourier);
+
+/**
+ * GET /courier/orders/available/stream
+ * SSE: notificare instant când apare o comandă nouă (PENDING, disponibilă).
+ * Curierul primește event "new_available"; fără polling când e conectat.
+ */
+router.get('/orders/available/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const handler = ({ order }) => {
+    try {
+      res.write(`event: new_available\n`);
+      res.write(`data: ${JSON.stringify({ orderId: order?.id })}\n\n`);
+      if (res.flush) res.flush();
+    } catch (_) {}
+  };
+
+  orderEvents.on('courier:new_available', handler);
+
+  const heartbeatMs = 25000;
+  const heartbeatInterval = setInterval(() => {
+    try {
+      res.write(': heartbeat\n\n');
+      if (res.flush) res.flush();
+    } catch (_) {
+      clearInterval(heartbeatInterval);
+    }
+  }, heartbeatMs);
+
+  req.on('close', () => {
+    clearInterval(heartbeatInterval);
+    orderEvents.off('courier:new_available', handler);
+  });
+});
 
 /**
  * GET /courier/orders/available

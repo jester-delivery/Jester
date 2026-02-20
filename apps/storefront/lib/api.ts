@@ -106,6 +106,8 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error.response?.status;
+    // 429 = prea multe cereri – nu delogăm, doar propagăm eroarea
+    if (status === 429) return Promise.reject(error);
     if (status === 401) {
       const requestUrl = error.config?.url ?? '';
       const isAuthLoginOrRegister =
@@ -223,10 +225,14 @@ export const api = {
       apiClient.post<{ success: boolean; count: number }>('/admin/products/bulk-deactivate', categoryId != null ? { categoryId } : {}),
   },
 
-  // Addresses – autocomplete Sulina + validare (public)
+  // Addresses – motor Sulina: listă completă + căutare + numere + validare (public)
   addresses: {
+    list: () =>
+      apiClient.get<{ suggestions: string[] }>('/addresses/list'),
     search: (q: string) =>
       apiClient.get<{ suggestions: string[] }>('/addresses/search', { params: { q: q || '' } }),
+    streetNumbers: (street: string) =>
+      apiClient.get<{ suggestions: string[] }>('/addresses/street-numbers', { params: { street: street || '' } }),
     validate: (address: string) =>
       apiClient.get<{ valid: boolean }>('/addresses/validate', { params: { address: address || '' } }),
   },

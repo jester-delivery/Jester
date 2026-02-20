@@ -21,4 +21,12 @@ function emitOrderStatus(order, opts = {}) {
   });
 }
 
-module.exports = { orderEvents, emitOrderStatus };
+/**
+ * Emis când o comandă nouă este creată (PENDING, disponibilă pentru curieri).
+ * Curierii conectați la SSE /courier/orders/available/stream primesc evenimentul instant.
+ */
+function emitNewOrderAvailable(order) {
+  orderEvents.emit('courier:new_available', { order });
+}
+
+module.exports = { orderEvents, emitOrderStatus, emitNewOrderAvailable };

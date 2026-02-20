@@ -1,6 +1,6 @@
 # 🎯 Jester - Project Roadmap
 
-**Ultima actualizare:** 15 Februarie 2026  
+**Ultima actualizare:** 13 Februarie 2026  
 **Status proiect:** 🟡 În dezvoltare (MVP)  
 **Backend MVP:** ✅ Complet
 
@@ -22,6 +22,8 @@
 - **Real-time Order Status:** SSE GET /orders/stream/:orderId – update instant când admin schimbă status, toast „Comanda ta e în drum”
 - **Notificări client:** SSE pe order detail (înlocuie polling), polling 8s pe lista Orders, toast + vibrație, badge „Comandă live”
 - **Hardening:** validări Zod (adresă min 5, telefon RO, nume min 2), admin doar pentru ADMIN_EMAILS
+- **Rate limit (429):** La „Prea multe cereri” utilizatorul (client + curier) nu mai este delogat; authStore și interceptor API tratează 429 separat; limite per IP (flux nelimitat)
+- **Preview imagini (Jester 24/24):** Modal lightbox (Radix Dialog) la tap pe imagine produs; ProductRow: butoane +/− pentru coș, tap pe imagine pentru preview
 
 ### 🔄 IN PROGRESS
 - N/A
@@ -1154,6 +1156,8 @@ Pentru a finaliza MVP-ul, următoarele **3 task-uri P0** sunt cele mai critice �
   - **API:** `POST /orders` body `{ items: [{ name, price, quantity }], total }` (Zod), creează CartOrder + CartOrderItems în tranzacție, returnează `{ orderId }`. `GET /orders` lista cu items, sortare desc după createdAt. `GET /orders/:id` o comandă cu items. Fără auth pentru MVP.
   - **Storefront:** La „Plasează comanda” din coș (Jester 24/24): POST /orders, la success golește coșul și redirect la `/orders`. Pagina `/orders` citește GET /orders, afișează status, total, dată, items; link la `/orders/[id]` pentru detaliu.
   - **Scripturi (root):** `npm run dev:db` (pornire PostgreSQL), `dev:api` (API), `dev:storefront` (Next.js). API: `npm run dev` în `services/api`.
+- ✅ **Rate limit (429) – fără delogare:** La „Prea multe cereri” (429) utilizatorul (client și curier) nu mai este delogat. Modificări: `authStore.fetchUser` nu șterge token la 429/RATE_LIMIT; interceptor în `lib/api.ts` nu face logout la 429; pagini courier afișează mesaj 429 fără redirect la login. Limitele API sunt per IP (express-rate-limit implicit); flux total nelimitat.
+- ✅ **Preview imagini Jester 24/24:** Modal lightbox (Radix Dialog + ImagePreviewModal) la tap pe imagine produs; ProductRow: doar butoanele +/− pentru coș, tap pe imagine deschide preview.
 
 **Cum pornești totul (MVP orders):**
 1. Din root: `npm run dev:db` (sau `docker compose -f infra/docker/docker-compose.yml up -d`) – pornește PostgreSQL.

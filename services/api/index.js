@@ -6,10 +6,11 @@ require("dotenv").config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// Rate limiting: general 200/min; auth 10/min; POST cart-orders 30/min
+// Rate limiting: per client (IP) – implicit în express-rate-limit; flux total nelimitat (fiecare IP are propriul contor)
+// General 100 cereri/minut per IP (vezi header-ele RateLimit-* în răspuns). Auth 10/min; POST cart-orders 30/min.
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 100,
   message: { error: 'Prea multe cereri. Încearcă din nou mai târziu.', code: 'RATE_LIMIT' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -21,10 +22,11 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+// Limiter efectiv pentru POST /cart-orders e în routes/cartOrders.js: 3 comenzi/min per IP
 const cartOrderCreateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
-  message: { error: 'Prea multe comenzi. Încearcă din nou în câteva minute.', code: 'RATE_LIMIT' },
+  max: 3,
+  message: { error: 'Prea multe comenzi. Maxim 3 pe minut. Încearcă mai târziu.', code: 'RATE_LIMIT' },
   standardHeaders: true,
   legacyHeaders: false,
 });

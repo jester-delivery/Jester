@@ -57,7 +57,9 @@ export default function CourierOrderDetailPage() {
       .catch((err) => {
         if (!cancelled) {
           const status = err?.response?.status;
-          if (status === 401) setError("Sesiune expirată. Te rugăm să te reconectezi.");
+          const apiError = err?.response?.data?.error;
+          if (status === 429) setError(typeof apiError === 'string' ? apiError : "Prea multe cereri. Încearcă din nou mai târziu.");
+          else if (status === 401) setError("Sesiune expirată. Te rugăm să te reconectezi.");
           else if (status === 403) router.replace("/courier");
           else setError("Comandă negăsită sau fără acces.");
         }
@@ -189,6 +191,11 @@ export default function CourierOrderDetailPage() {
 
           <p className="mt-4 text-xs text-white/50">Adresă livrare</p>
           <p className="mt-1 text-white">{order.deliveryAddress || "—"}</p>
+
+          <p className="mt-4 text-xs text-white/50">Modalitate plată</p>
+          <p className="mt-1 font-medium text-green-400">
+            {order.paymentMethod === "CARD" ? "Plată cu cardul" : "Plată la livrare"}
+          </p>
 
           {(order.name || order.phone) && (
             <>
